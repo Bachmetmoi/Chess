@@ -10,7 +10,7 @@ public abstract class Piece {
     // attributes
     private int value;
     private Faction side;
-    private boolean isFirstMove = true;
+    private int moveCount = 0;
 
     // constructor
     public Piece(int value, Faction side) {
@@ -35,11 +35,15 @@ public abstract class Piece {
         return value;
     }
 
-    public boolean getIsFirstMove() {
-        return isFirstMove;
+    public int getMoveCount() {
+        return moveCount;
     }
 
-    public void changeIsFirstMove() {
-        isFirstMove = false;
+    public void addMoveCount() {
+        moveCount += 1;
+    }
+
+    public void reduceMoveCount() {
+        moveCount -= 1;
     }
 }

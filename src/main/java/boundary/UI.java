@@ -73,7 +73,7 @@ public class UI extends Application {
         // Build squares. Screen row 0 is the top = rank 8 (board y = 7).
         for (int row = 0; row < N; row++) {
             for (int col = 0; col < N; col++) {
-                int bx = col;        // file a..h -> x 0..7
+                int bx = col; // file a..h -> x 0..7
                 int by = N - 1 - row; // top row -> y 7
 
                 Rectangle bg = new Rectangle(SQUARE, SQUARE);
