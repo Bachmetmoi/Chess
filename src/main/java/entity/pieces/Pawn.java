@@ -51,18 +51,20 @@ public class Pawn extends Piece {
         if (curY + direction == lastRow) {
             // forward
             if (curX < 8 && curX >= 0 && board[curX][curY + direction].getContain() == null) {
-                moves.add(new Promotion(curX, curY, curX, curY + direction, this, null));
+                moves.add(new Promotion(curX, curY, curX, curY + direction, this, null, null));
             }
 
             // capture
             if (curX + 1 < 8 && curX + 1 >= 0 && board[curX + 1][curY + direction].getContain() != null
                     && board[curX + 1][curY + direction].getContain().getSide() != this.getSide()) {
-                moves.add(new Promotion(curX, curY, curX + 1, curY + direction, this, null));
+                moves.add(new Promotion(curX, curY, curX + 1, curY + direction, this, null,
+                        board[curX + 1][curY + direction].getContain()));
             }
 
             if (curX - 1 < 8 && curX - 1 >= 0 && board[curX - 1][curY + direction].getContain() != null
                     && board[curX - 1][curY + direction].getContain().getSide() != this.getSide()) {
-                moves.add(new Promotion(curX, curY, curX - 1, curY + direction, this, null));
+                moves.add(new Promotion(curX, curY, curX - 1, curY + direction, this, null,
+                        board[curX - 1][curY + direction].getContain()));
             }
         } else {
             // part 1:

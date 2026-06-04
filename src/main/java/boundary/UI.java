@@ -22,6 +22,7 @@ import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -56,6 +57,7 @@ public class UI extends Application {
     // view
     private final StackPane[][] squares = new StackPane[N][N];
     private Label statusLabel;
+    private Button undoButton;
 
     // interaction state
     private Integer selX = null;
@@ -73,7 +75,7 @@ public class UI extends Application {
         // Build squares. Screen row 0 is the top = rank 8 (board y = 7).
         for (int row = 0; row < N; row++) {
             for (int col = 0; col < N; col++) {
-                int bx = col;        // file a..h -> x 0..7
+                int bx = col; // file a..h -> x 0..7
                 int by = N - 1 - row; // top row -> y 7
 
                 Rectangle bg = new Rectangle(SQUARE, SQUARE);
@@ -86,13 +88,22 @@ public class UI extends Application {
             }
         }
 
+        // Undo button (top bar).
+        undoButton = new Button("Undo");
+        undoButton.setFont(Font.font(14));
+        undoButton.setStyle("-fx-padding: 6 18;");
+        undoButton.setOnAction(e -> undo());
+
         statusLabel = new Label();
         statusLabel.setFont(Font.font(18));
         statusLabel.setPadding(new Insets(10));
 
         BorderPane root = new BorderPane();
+        root.setTop(undoButton);
         root.setCenter(grid);
         root.setBottom(statusLabel);
+        BorderPane.setAlignment(undoButton, Pos.CENTER);
+        BorderPane.setMargin(undoButton, new Insets(0, 0, 10, 0));
         BorderPane.setAlignment(statusLabel, Pos.CENTER);
         root.setPadding(new Insets(12));
         root.setStyle("-fx-background-color: #312E2B;");
@@ -177,6 +188,13 @@ public class UI extends Application {
         redraw();
     }
 
+    private void undo() {
+        gameController.undoMove();
+        gameController.getGameState().setGameStatus(Result.ONGOING);
+        clearSelection();
+        redraw();
+    }
+
     private void clearSelection() {
         selX = null;
         selY = null;
@@ -222,6 +240,9 @@ public class UI extends Application {
                 }
             }
         }
+
+        // Nothing to undo at the start position.
+        undoButton.setDisable(gameController.getGameState().getMoveHistory().isEmpty());
 
         updateStatus();
     }

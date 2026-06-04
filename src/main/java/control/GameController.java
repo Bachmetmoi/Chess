@@ -10,7 +10,10 @@ import entity.enums.Result;
 import entity.move.Castling;
 import entity.move.EnPassant;
 import entity.move.Move;
+import entity.move.NormalMove;
+import entity.move.Promotion;
 import entity.pieces.King;
+import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.state.GameState;
 
@@ -78,7 +81,7 @@ public class GameController {
         }
 
         // change isFirstMove
-        movingPiece.changeIsFirstMove();
+        movingPiece.addMoveCount();
 
         // add to move History
         gameState.addMoveHistory(move);
@@ -90,6 +93,82 @@ public class GameController {
             gameState.setTurn(Faction.WHITE);
         return gameState;
 
+    }
+
+    public GameState undoMove() {
+        // edge cases
+        if (gameState.getMoveHistory().size() == 0) {
+            System.out.println("This is the start position. You can't undo!");
+            return gameState;
+        }
+
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        Move undo = gameState.getMoveHistory().remove(gameState.getMoveHistory().size() - 1);
+        Piece movingPiece = undo.getPiece();
+        int startX = undo.getStartXPos();
+        int startY = undo.getStartYPos();
+        int endX = undo.getEndXPos();
+        int endY = undo.getEndYPos();
+
+        // normal move
+        if (undo instanceof NormalMove) {
+            Piece capturedPiece = ((NormalMove) undo).getCapturePiece();
+
+            // revert position
+            board[endX][endY].setContain(capturedPiece);
+            board[startX][startY].setContain(movingPiece);
+
+        }
+
+        else {
+            if (undo instanceof Castling) {
+                // short
+                if ((((Castling) undo).getSecondPieceEndXPos() == 5)) {
+                    Piece secondPiece = board[startX + 1][startY].getContain();
+                    board[endX][endY].setContain(null);
+                    board[((Castling) undo).getSecondPieceEndXPos()][((Castling) undo).getSecondPieceEndYPos()]
+                            .setContain(null);
+                    board[startX][startY].setContain(movingPiece);
+                    board[startX + 3][startY].setContain(secondPiece);
+                }
+
+                // long
+                if ((((Castling) undo).getSecondPieceEndXPos() == 3)) {
+                    Piece secondPiece = board[startX - 1][startY].getContain();
+                    board[endX][endY].setContain(null);
+                    board[((Castling) undo).getSecondPieceEndXPos()][((Castling) undo).getSecondPieceEndYPos()]
+                            .setContain(null);
+                    board[startX][startY].setContain(movingPiece);
+                    board[startX - 4][startY].setContain(secondPiece);
+                }
+            }
+
+            if (undo instanceof EnPassant) {
+                Piece capturedPiece = ((EnPassant) undo).getCapturePiece();
+
+                board[startX][startY].setContain(movingPiece);
+                board[endX][startY].setContain(capturedPiece);
+                board[endX][endY].setContain(null);
+            }
+
+            if (undo instanceof Promotion) {
+                Pawn pawn = new Pawn(movingPiece.getSide());
+                Piece capturePiece = ((Promotion) undo).getCapturePiece();
+                board[startX][startY].setContain(pawn);
+                board[endX][endY].setContain(capturePiece);
+            }
+        }
+
+        // change turn
+        if (gameState.getTurn() == Faction.WHITE)
+            gameState.setTurn(Faction.BLACK);
+        else
+            gameState.setTurn(Faction.WHITE);
+
+        // reduce move counter
+        movingPiece.reduceMoveCount();
+
+        return gameState;
     }
 
     public Result checkGameStatus() {

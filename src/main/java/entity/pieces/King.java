@@ -44,20 +44,20 @@ public class King extends Piece {
 
         // check Castling
         // short castling
-        if (curX == 4 && this.getIsFirstMove() && board[curX + 1][curY].getContain() == null
+        if (curX == 4 && this.getMoveCount() == 0 && board[curX + 1][curY].getContain() == null
                 && board[curX + 2][curY].getContain() == null
                 && board[curX + 3][curY].getContain() instanceof Rook
-                && board[curX + 3][curY].getContain().getIsFirstMove()) {
+                && board[curX + 3][curY].getContain().getMoveCount() == 0) {
             moves.add(
                     new Castling(curX, curY, curX + 2, curY, this, curX + 1, curY, board[curX + 3][curY].getContain()));
         }
 
         // long castling
-        if (curX == 4 && this.getIsFirstMove() && board[curX - 1][curY].getContain() == null
+        if (curX == 4 && this.getMoveCount() == 0 && board[curX - 1][curY].getContain() == null
                 && board[curX - 2][curY].getContain() == null
                 && board[curX - 3][curY].getContain() == null
                 && board[curX - 4][curY].getContain() instanceof Rook
-                && board[curX - 4][curY].getContain().getIsFirstMove()) {
+                && board[curX - 4][curY].getContain().getMoveCount() == 0) {
             moves.add(
                     new Castling(curX, curY, curX - 2, curY, this, curX - 1, curY, board[curX - 4][curY].getContain()));
         }
