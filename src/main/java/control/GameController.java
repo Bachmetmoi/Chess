@@ -11,7 +11,9 @@ import entity.move.Castling;
 import entity.move.EnPassant;
 import entity.move.Move;
 import entity.move.NormalMove;
+import entity.move.Promotion;
 import entity.pieces.King;
+import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.state.GameState;
 
@@ -147,6 +149,13 @@ public class GameController {
                 board[startX][startY].setContain(movingPiece);
                 board[endX][startY].setContain(capturedPiece);
                 board[endX][endY].setContain(null);
+            }
+
+            if (undo instanceof Promotion) {
+                Pawn pawn = new Pawn(movingPiece.getSide());
+                Piece capturePiece = ((Promotion) undo).getCapturePiece();
+                board[startX][startY].setContain(pawn);
+                board[endX][endY].setContain(capturePiece);
             }
         }
 
