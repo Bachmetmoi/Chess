@@ -21,6 +21,7 @@ public class GameController {
     // attributes
     private GameState gameState;
     private LegalMove legalMove;
+    private int moveUntilDraw = 0;
 
     // methods
     public void startGame(BoardSetup board) {
@@ -29,6 +30,7 @@ public class GameController {
         List<Move> move = new ArrayList<>();
         gameState = new GameState(Faction.WHITE, move, Result.ONGOING, b);
         legalMove = new LegalMove(b);
+        moveUntilDraw = 0;
     }
 
     public boolean validate(Move move) {
@@ -46,6 +48,8 @@ public class GameController {
         int endX = move.getEndXPos();
         int endY = move.getEndYPos();
         Piece movingPiece = board[startX][startY].getContain();
+
+        move.setMoveUntilDrawBefore(moveUntilDraw);
 
         // check Castling
         if (move instanceof Castling) {
@@ -84,6 +88,19 @@ public class GameController {
         else {
             board[startX][startY].setContain(null);
             board[endX][endY].setContain(movingPiece);
+        }
+
+        // reset 50 move rule
+        if (move.getPiece() instanceof Pawn) {
+            moveUntilDraw = 0;
+        }
+
+        else if (move instanceof NormalMove && ((NormalMove) move).getCapturePiece() != null) {
+            moveUntilDraw = 0;
+        }
+
+        else {
+            moveUntilDraw += 1;
         }
 
         // change isFirstMove
@@ -173,6 +190,9 @@ public class GameController {
 
         // reduce move counter
         movingPiece.reduceMoveCount();
+
+        // reduce moveUntilDraw
+        moveUntilDraw = undo.getMoveUntilDrawBefore();
 
         return gameState;
     }

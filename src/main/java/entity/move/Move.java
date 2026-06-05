@@ -10,6 +10,8 @@ public abstract class Move {
     private int endYPos;
     private Piece piece;
 
+    private int moveUntilDrawBefore;
+
     // constructor
     public Move(int startXPos, int startYPos, int endXPos, int endYPos, Piece piece) {
         this.startXPos = startXPos;
@@ -38,5 +40,13 @@ public abstract class Move {
 
     public Piece getPiece() {
         return piece;
+    }
+
+    public int getMoveUntilDrawBefore() {
+        return moveUntilDrawBefore;
+    }
+
+    public void setMoveUntilDrawBefore(int value) {
+        moveUntilDrawBefore = value;
     }
 }
