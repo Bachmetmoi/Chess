@@ -75,6 +75,12 @@ public class GameController {
             board[endX][endY].setContain(movingPiece);
         }
 
+        else if (move instanceof Promotion) {
+            Piece promoted = ((Promotion) move).getPiecePromoted();
+            board[startX][startY].setContain(null);
+            board[endX][endY].setContain(promoted);
+        }
+
         else {
             board[startX][startY].setContain(null);
             board[endX][endY].setContain(movingPiece);

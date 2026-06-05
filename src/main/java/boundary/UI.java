@@ -172,16 +172,11 @@ public class UI extends Application {
     }
 
     private void play(Move move) {
-        gameController.executes(move);
-
-        // Promotion: the engine moves the pawn but keeps it a pawn, so the UI
-        // asks the player what to promote to and swaps the piece on the board.
         if (move instanceof Promotion) {
-            Cell[][] board = gameController.getGameState().getChessBoard().getBoard();
-            Piece pawn = board[move.getEndXPos()][move.getEndYPos()].getContain();
-            Piece promoted = askPromotion(pawn.getSide());
-            board[move.getEndXPos()][move.getEndYPos()].setContain(promoted);
+            Piece promoted = askPromotion(move.getPiece().getSide());
+            ((Promotion) move).setPiecePromoted(promoted);
         }
+        gameController.executes(move);
 
         clearSelection();
         gameController.checkGameStatus();

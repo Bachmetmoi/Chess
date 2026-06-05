@@ -23,4 +23,8 @@ public class Promotion extends SpecialMove {
     public Piece getCapturePiece() {
         return capture;
     }
+
+    public void setPiecePromoted(Piece promoted) {
+        promoteTo = promoted;
+    }
 }
