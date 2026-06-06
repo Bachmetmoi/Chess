@@ -70,4 +70,21 @@ public class GameState {
         positionHistory.put(positionKey, count);
         return count;
     }
+
+    /**
+     * Removes one occurrence of the given position, undoing a previous
+     * {@link #recordPosition} call. Keeps the threefold repetition counts in sync
+     * when a move is taken back, so an undone repetition no longer counts.
+     */
+    public void unrecordPosition(String positionKey) {
+        Integer count = positionHistory.get(positionKey);
+        if (count == null) {
+            return;
+        }
+        if (count <= 1) {
+            positionHistory.remove(positionKey);
+        } else {
+            positionHistory.put(positionKey, count - 1);
+        }
+    }
 }

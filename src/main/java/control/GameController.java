@@ -129,6 +129,12 @@ public class GameController {
             return gameState;
         }
 
+        // un-count the position we are leaving so a taken-back repetition does not
+        // keep counting toward a threefold draw. Must run before the board, turn
+        // and history are reverted, so positionKey() still matches the key that
+        // checkGameStatus() recorded for this move.
+        gameState.unrecordPosition(positionKey());
+
         Cell[][] board = gameState.getChessBoard().getBoard();
         Move undo = gameState.getMoveHistory().remove(gameState.getMoveHistory().size() - 1);
         Piece movingPiece = undo.getPiece();
