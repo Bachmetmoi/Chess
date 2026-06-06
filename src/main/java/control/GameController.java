@@ -10,8 +10,13 @@ import entity.enums.Result;
 import entity.move.Castling;
 import entity.move.EnPassant;
 import entity.move.Move;
+import entity.pieces.Bishop;
 import entity.pieces.King;
+import entity.pieces.Knight;
+import entity.pieces.Pawn;
 import entity.pieces.Piece;
+import entity.pieces.Queen;
+import entity.pieces.Rook;
 import entity.state.GameState;
 
 public class GameController {
@@ -93,6 +98,13 @@ public class GameController {
     }
 
     public Result checkGameStatus() {
+        // threefold repetition: if the same position is reached three times the
+        // game is a draw, even when legal moves are still available
+        if (gameState.recordPosition(positionKey()) >= 3) {
+            gameState.setGameStatus(Result.DRAW);
+            return Result.DRAW;
+        }
+
         // if it is check and no moves --> checkmate
         // if it is not check and no moves --> draw
         // else: ongoing
@@ -144,6 +156,94 @@ public class GameController {
         gameState.setGameStatus(Result.DRAW);
         return Result.DRAW;
 
+    }
+
+    /**
+     * Builds a string that uniquely identifies the current position for the
+     * threefold repetition rule. Two positions count as the same only when they
+     * share the same piece placement, side to move, castling rights and en
+     * passant possibility (the same fields a FEN string uses).
+     */
+    private String positionKey() {
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        StringBuilder sb = new StringBuilder();
+
+        // piece placement
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                Piece p = board[x][y].getContain();
+                sb.append(p == null ? '.' : pieceSymbol(p));
+            }
+        }
+
+        // side to move
+        sb.append(' ').append(gameState.getTurn() == Faction.WHITE ? 'w' : 'b');
+        // castling rights
+        sb.append(' ').append(castlingRights());
+        // en passant target square
+        sb.append(' ').append(enPassantTarget());
+
+        return sb.toString();
+    }
+
+    private char pieceSymbol(Piece p) {
+        char c;
+        if (p instanceof King) {
+            c = 'k';
+        } else if (p instanceof Queen) {
+            c = 'q';
+        } else if (p instanceof Rook) {
+            c = 'r';
+        } else if (p instanceof Bishop) {
+            c = 'b';
+        } else if (p instanceof Knight) {
+            c = 'n';
+        } else {
+            c = 'p'; // Pawn
+        }
+        return p.getSide() == Faction.WHITE ? Character.toUpperCase(c) : c;
+    }
+
+    private String castlingRights() {
+        StringBuilder sb = new StringBuilder();
+        // White king on e1 (4,0); rooks on h1 (7,0) and a1 (0,0)
+        if (canCastle(4, 0, 7, 0, Faction.WHITE)) {
+            sb.append('K');
+        }
+        if (canCastle(4, 0, 0, 0, Faction.WHITE)) {
+            sb.append('Q');
+        }
+        // Black king on e8 (4,7); rooks on h8 (7,7) and a8 (0,7)
+        if (canCastle(4, 7, 7, 7, Faction.BLACK)) {
+            sb.append('k');
+        }
+        if (canCastle(4, 7, 0, 7, Faction.BLACK)) {
+            sb.append('q');
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    private boolean canCastle(int kingX, int kingY, int rookX, int rookY, Faction side) {
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        Piece king = board[kingX][kingY].getContain();
+        Piece rook = board[rookX][rookY].getContain();
+        return king instanceof King && king.getSide() == side && king.getIsFirstMove()
+                && rook instanceof Rook && rook.getSide() == side && rook.getIsFirstMove();
+    }
+
+    private String enPassantTarget() {
+        List<Move> history = gameState.getMoveHistory();
+        if (history.isEmpty()) {
+            return "-";
+        }
+        Move last = history.get(history.size() - 1);
+        // a pawn that just advanced two squares leaves an en passant target on the
+        // square it skipped over
+        if (last.getPiece() instanceof Pawn && Math.abs(last.getStartYPos() - last.getEndYPos()) == 2) {
+            int targetY = (last.getStartYPos() + last.getEndYPos()) / 2;
+            return "" + last.getEndXPos() + targetY;
+        }
+        return "-";
     }
 
     public GameState getGameState() {
