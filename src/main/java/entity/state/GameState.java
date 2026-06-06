@@ -1,6 +1,8 @@
 package entity.state;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import entity.board.ChessBoard;
 import entity.enums.Faction;
@@ -13,6 +15,9 @@ public class GameState {
     private List<Move> moveHistory;
     private Result gameStatus;
     private ChessBoard chessBoard;
+    // how many times each position (placement + turn + castling + en passant)
+    // has occurred, used to detect threefold repetition
+    private Map<String, Integer> positionHistory = new HashMap<>();
 
     // constructor
     public GameState(Faction t, List<Move> m, Result g, ChessBoard c) {
@@ -53,5 +58,16 @@ public class GameState {
 
     public void addMoveHistory(Move m) {
         moveHistory.add(m);
+    }
+
+    /**
+     * Records that the given position has been reached once more and returns how
+     * many times it has now occurred. A return value of 3 (or more) means the
+     * threefold repetition rule applies.
+     */
+    public int recordPosition(String positionKey) {
+        int count = positionHistory.getOrDefault(positionKey, 0) + 1;
+        positionHistory.put(positionKey, count);
+        return count;
     }
 }
