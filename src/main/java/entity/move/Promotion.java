@@ -5,7 +5,7 @@ import entity.pieces.Piece;
 public class Promotion extends SpecialMove {
     // attributes
     private Piece promoteTo;
-    private Piece capture;
+    private Piece capture; // If no capture return Null
 
     // constructor
     public Promotion(int startXPos, int startYPos, int endXPos, int endYPos, Piece piece, Piece promoted,

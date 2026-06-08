@@ -4,9 +4,9 @@ import entity.pieces.Piece;
 
 public class Castling extends SpecialMove {
     // attributes
-    private Piece secondPiece;
-    private int secondPieceEndXPos;
-    private int secondPieceEndYPos;
+    private Piece secondPiece; // Second piece: Rock
+    private int secondPieceEndXPos; // Position of rock after Castle
+    private int secondPieceEndYPos; // Position of rock after Castle
 
     // constructor
     public Castling(int startXPos, int startYPos, int endXPos, int endYPos, Piece piece, int secondXPos, int secondYPos,

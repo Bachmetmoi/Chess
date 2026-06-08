@@ -11,7 +11,7 @@ import entity.move.Move;
 
 public class GameState {
     // attributes
-    private Faction turn;
+    private Faction turn; // Current state, which side is in turn
     private List<Move> moveHistory;
     private Result gameStatus;
     private ChessBoard chessBoard;

@@ -4,7 +4,7 @@ import entity.pieces.Piece;
 
 public class EnPassant extends SpecialMove {
     // attributes
-    private Piece capture;
+    private Piece capture; // Capture Pawn
 
     // constructor
     public EnPassant(int startXPos, int startYPos, int endXPos, int endYPos, Piece piece, Piece capturePiece) {
