@@ -18,31 +18,30 @@ import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.pieces.Queen;
 import entity.pieces.Rook;
-import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Scene;
+import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
-import javafx.stage.Stage;
 
 /**
- * JavaFX board UI. Renders the chessboard and pieces and drives the game purely
- * through clicks: select one of your pieces, then click a highlighted square to
- * move. All game rules stay in the control/entity layers; this class only draws
- * the state and forwards moves to {@link GameController}.
+ * The chessboard screen (two-player). Renders the board and pieces and drives
+ * the game through clicks: select one of the side-to-move's pieces, then click
+ * a highlighted square to move. All rules stay in the control/entity layers;
+ * this class only draws state and forwards moves to {@link GameController}.
  */
-public class UI extends Application {
+public class GameScreen extends Screen {
     // visual constants
     private static final int N = 8;
     private static final double SQUARE = 80;
@@ -64,8 +63,12 @@ public class UI extends Application {
     private Integer selY = null;
     private List<Move> selMoves = new ArrayList<>();
 
+    public GameScreen(Navigator navigator) {
+        super(navigator);
+    }
+
     @Override
-    public void start(Stage stage) {
+    public Parent getView() {
         gameController = new GameController();
         gameController.startGame(new BoardSetup());
 
@@ -88,32 +91,35 @@ public class UI extends Application {
             }
         }
 
-        // Undo button (top bar).
+        // Top bar: return to the main menu, and undo.
+        Button menuButton = new Button("Menu");
+        menuButton.setFont(Font.font(14));
+        menuButton.setStyle("-fx-padding: 6 18;");
+        menuButton.setOnAction(e -> navigator.showMainMenu());
+
         undoButton = new Button("Undo");
         undoButton.setFont(Font.font(14));
         undoButton.setStyle("-fx-padding: 6 18;");
         undoButton.setOnAction(e -> undo());
+
+        HBox topBar = new HBox(10, menuButton, undoButton);
+        topBar.setAlignment(Pos.CENTER);
+        topBar.setPadding(new Insets(0, 0, 10, 0));
 
         statusLabel = new Label();
         statusLabel.setFont(Font.font(18));
         statusLabel.setPadding(new Insets(10));
 
         BorderPane root = new BorderPane();
-        root.setTop(undoButton);
+        root.setTop(topBar);
         root.setCenter(grid);
         root.setBottom(statusLabel);
-        BorderPane.setAlignment(undoButton, Pos.CENTER);
-        BorderPane.setMargin(undoButton, new Insets(0, 0, 10, 0));
         BorderPane.setAlignment(statusLabel, Pos.CENTER);
         root.setPadding(new Insets(12));
         root.setStyle("-fx-background-color: #312E2B;");
 
         redraw();
-
-        stage.setTitle("Chess");
-        stage.setScene(new Scene(root));
-        stage.setResizable(false);
-        stage.show();
+        return root;
     }
 
     // ----- interaction -----
@@ -265,8 +271,8 @@ public class UI extends Application {
         Result status = gameController.getGameState().getGameStatus();
         statusLabel.setTextFill(Color.WHITE);
         switch (status) {
-            case WHITE_WIN -> statusLabel.setText("Checkmate — White wins");
-            case BLACK_WIN -> statusLabel.setText("Checkmate — Black wins");
+            case WHITE_WIN -> statusLabel.setText("Checkmate \u2014 White wins");
+            case BLACK_WIN -> statusLabel.setText("Checkmate \u2014 Black wins");
             case DRAW -> statusLabel.setText("Draw");
             default -> {
                 Faction turn = gameController.getGameState().getTurn();
@@ -308,22 +314,22 @@ public class UI extends Application {
         // Solid (filled) glyphs are used for both colours; the fill colour set in
         // glyph() distinguishes white from black, which reads best on the board.
         if (piece instanceof King) {
-            return "♚";
+            return "\u265A";
         }
         if (piece instanceof Queen) {
-            return "♛";
+            return "\u265B";
         }
         if (piece instanceof Rook) {
-            return "♜";
+            return "\u265C";
         }
         if (piece instanceof Bishop) {
-            return "♝";
+            return "\u265D";
         }
         if (piece instanceof Knight) {
-            return "♞";
+            return "\u265E";
         }
         if (piece instanceof Pawn) {
-            return "♟";
+            return "\u265F";
         }
         return "";
     }
