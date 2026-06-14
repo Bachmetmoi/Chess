@@ -3,7 +3,7 @@ package boundary;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 
-/** Reached from "Play": choose 2 Player (launches the board) or Engine. */
+/** Reached from "Play": choose 2 Player or play against the engine. */
 public class ModeSelectScreen extends Screen {
 
     public ModeSelectScreen(Navigator navigator) {
@@ -26,11 +26,11 @@ public class ModeSelectScreen extends Screen {
     }
 
     private void onTwoPlayer() {
-        navigator.showGame();
+        navigator.showGame(GameMode.TWO_PLAYER);
     }
 
     private void onEngine() {
-        navigator.showUnderDevelopment("Play vs Engine");
+        navigator.showGame(GameMode.VS_ENGINE);
     }
 
     private void onBack() {

@@ -28,6 +28,25 @@ public class GameController {
     private int moveUntilDraw = 0;
 
     // methods
+    public List<Move> getMoves(GameState gameState) {
+        List<Move> moves = new ArrayList<>();
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        List<Move> history = gameState.getMoveHistory();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                Piece p = board[i][j].getContain();
+                if (p != null && p.getSide() == gameState.getTurn()) {
+                    for (Move m : p.move(board, i, j, history)) {
+                        if (legalMove.isLegal(m)) {
+                            moves.add(m);
+                        }
+                    }
+                }
+            }
+        }
+        return moves;
+    }
+
     public void startGame(BoardSetup board) {
         // setup Board
         ChessBoard b = board.setUp();
@@ -219,24 +238,12 @@ public class GameController {
         // if it is not check and no moves --> draw
         // else: ongoing
 
-        Cell[][] board = gameState.getChessBoard().getBoard();
-
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                // find same side pieces
-                if (board[i][j].getContain() == null || board[i][j].getContain().getSide() != gameState.getTurn()) {
-                    continue;
-                } else {
-                    List<Move> moves = board[i][j].getContain().move(board, i, j);
-                    for (Move m : moves) {
-                        // if legal moves exist --> game not end
-                        if (legalMove.isLegal(m))
-                            return Result.ONGOING;
-                    }
-                }
-
-            }
+        if (!getMoves(gameState).isEmpty()) {
+            return Result.ONGOING;
         }
+
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        List<Move> history = gameState.getMoveHistory();
 
         // if no legal moves exist
         for (int i = 0; i < 8; i++) {
@@ -245,7 +252,7 @@ public class GameController {
                 if (board[i][j].getContain() == null || board[i][j].getContain().getSide() == gameState.getTurn()) {
                     continue;
                 } else {
-                    List<Move> moves = board[i][j].getContain().move(board, i, j);
+                    List<Move> moves = board[i][j].getContain().move(board, i, j, history);
                     for (Move m : moves) {
                         // find check
                         if (board[m.getEndXPos()][m.getEndYPos()].getContain() instanceof King

@@ -33,8 +33,14 @@ public class Navigator {
         show(new UnderDevelopmentScreen(this, feature).getView());
     }
 
+    /** Two-player game (kept for convenience). */
     public void showGame() {
-        show(new GameScreen(this).getView());
+        showGame(GameMode.TWO_PLAYER);
+    }
+
+    /** Game in the given mode: two-player, or human (White) vs the engine. */
+    public void showGame(GameMode mode) {
+        show(new GameScreen(this, mode).getView());
     }
 
     private void show(Parent root) {

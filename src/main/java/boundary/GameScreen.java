@@ -6,6 +6,8 @@ import java.util.Optional;
 
 import control.BoardSetup;
 import control.GameController;
+import control.engine.Engine;
+import control.engine.Martin;
 import entity.board.Cell;
 import entity.enums.Faction;
 import entity.enums.Result;
@@ -36,10 +38,13 @@ import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 
 /**
- * The chessboard screen (two-player). Renders the board and pieces and drives
- * the game through clicks: select one of the side-to-move's pieces, then click
- * a highlighted square to move. All rules stay in the control/entity layers;
- * this class only draws state and forwards moves to {@link GameController}.
+ * The chessboard screen. Renders the board and pieces and drives the game
+ * through clicks: select one of the side-to-move's pieces, then click a
+ * highlighted square to move. All rules stay in the control/entity layers; this
+ * class only draws state and forwards moves to {@link GameController}.
+ *
+ * <p>In {@link GameMode#VS_ENGINE} the human plays White and the engine
+ * (Martin) plays Black, replying automatically after each human move.
  */
 public class GameScreen extends Screen {
     // visual constants
@@ -49,6 +54,11 @@ public class GameScreen extends Screen {
     private static final Color DARK = Color.web("#769656");
     private static final Color SELECTED = Color.web("#F6F669");
     private static final Color HINT = Color.web("#000000", 0.18);
+
+    // mode + engine
+    private final GameMode mode;
+    private Engine engine;          // null in two-player mode
+    private Faction engineSide;     // null in two-player mode
 
     // game
     private GameController gameController;
@@ -63,14 +73,27 @@ public class GameScreen extends Screen {
     private Integer selY = null;
     private List<Move> selMoves = new ArrayList<>();
 
+    /** Two-player game. */
     public GameScreen(Navigator navigator) {
+        this(navigator, GameMode.TWO_PLAYER);
+    }
+
+    /** Game in the given mode. */
+    public GameScreen(Navigator navigator, GameMode mode) {
         super(navigator);
+        this.mode = mode;
     }
 
     @Override
     public Parent getView() {
         gameController = new GameController();
         gameController.startGame(new BoardSetup());
+
+        // In engine mode, the human plays White and Martin plays Black.
+        if (mode == GameMode.VS_ENGINE) {
+            engine = new Martin(gameController);
+            engineSide = Faction.BLACK;
+        }
 
         GridPane grid = new GridPane();
         grid.setAlignment(Pos.CENTER);
@@ -126,6 +149,11 @@ public class GameScreen extends Screen {
 
     private void onClick(int[] pos) {
         if (gameController.getGameState().getGameStatus() != Result.ONGOING) {
+            return;
+        }
+
+        // In engine mode, ignore board clicks while it is the engine's turn.
+        if (mode == GameMode.VS_ENGINE && gameController.getGameState().getTurn() == engineSide) {
             return;
         }
 
@@ -187,11 +215,54 @@ public class GameScreen extends Screen {
         clearSelection();
         gameController.checkGameStatus();
         redraw();
+
+        // Let the engine reply to the human's move.
+        maybeEngineMove();
+    }
+
+    /**
+     * If we are in engine mode, the game is still ongoing and it is the engine's
+     * turn, ask the engine for a move and play it. The engine always promotes to
+     * a Queen (there is no human to ask).
+     */
+    private void maybeEngineMove() {
+        if (mode != GameMode.VS_ENGINE) {
+            return;
+        }
+        if (gameController.getGameState().getGameStatus() != Result.ONGOING) {
+            return;
+        }
+        if (gameController.getGameState().getTurn() != engineSide) {
+            return;
+        }
+
+        Move move = engine.chooseMove(gameController.getGameState());
+        if (move == null) {
+            return;
+        }
+        if (move instanceof Promotion) {
+            ((Promotion) move).setPiecePromoted(new Queen(engineSide));
+        }
+
+        gameController.executes(move);
+        gameController.checkGameStatus();
+        redraw();
     }
 
     private void undo() {
         gameController.undoMove();
         gameController.getGameState().setGameStatus(Result.ONGOING);
+
+        // In engine mode a turn is two plies (human + engine). After undoing the
+        // engine's reply it is the engine's turn again, so step back once more to
+        // return control to the human.
+        if (mode == GameMode.VS_ENGINE
+                && gameController.getGameState().getTurn() == engineSide
+                && !gameController.getGameState().getMoveHistory().isEmpty()) {
+            gameController.undoMove();
+            gameController.getGameState().setGameStatus(Result.ONGOING);
+        }
+
         clearSelection();
         redraw();
     }
