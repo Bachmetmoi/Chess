@@ -8,6 +8,7 @@ import entity.enums.Faction; // the colour enum: WHITE or BLACK
 import entity.move.Move; // the abstract "a move" type (NormalMove, Castling, Promotion, ...)
 import entity.move.Promotion; // a pawn-promotion move; we must fill in which piece it becomes
 import entity.pieces.King; // needed to locate the king when testing for check
+import entity.pieces.Pawn; // pawns get an extra per-square bonus (piece-square table)
 import entity.pieces.Piece; // the abstract "a chess piece" type
 import entity.pieces.Queen; // we always promote to a queen in this simple engine
 import entity.state.GameState; // holds whose turn it is, the board, and the move history
@@ -38,6 +39,24 @@ public class ChessEngine {
     // will castle when nothing more valuable is at stake, but not so much that it
     // ignores a real capture to do it. Tune this up to make it castle more eagerly.
     private static final int CASTLE_BONUS = 50;
+
+    // Piece-square table for pawns, in centipawns, from White's point of view.
+    // Read it as PAWN_PST[y][x]: y is the rank (0 = rank 1, White's back rank;
+    // 7 = rank 8) and x is the file (0 = a-file ... 7 = h-file). Central, advanced
+    // pawns are worth more, and the d/e pawns on their start squares are worth
+    // LESS, so the engine is rewarded for pushing them out (e2-e4, d2-d4) instead
+    // of shuffling an edge pawn. Black pawns use the same table flipped top-to-
+    // bottom (7 - y), which mirrors White's values onto Black's side.
+    private static final int[][] PAWN_PST = {
+            { 0, 0, 0, 0, 0, 0, 0, 0 }, // rank 1 (pawns never stand here)
+            { 5, 10, 10, -20, -20, 10, 10, 5 }, // rank 2 (start): d2/e2 discouraged
+            { 5, -5, -10, 0, 0, -10, -5, 5 }, // rank 3
+            { 0, 0, 0, 20, 20, 0, 0, 0 }, // rank 4: d4/e4 rewarded
+            { 5, 5, 10, 25, 25, 10, 5, 5 }, // rank 5
+            { 10, 10, 20, 30, 30, 20, 10, 10 }, // rank 6
+            { 50, 50, 50, 50, 50, 50, 50, 50 }, // rank 7 (about to promote)
+            { 0, 0, 0, 0, 0, 0, 0, 0 }, // rank 8 (promotion handled by material)
+    };
 
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
@@ -174,8 +193,14 @@ public class ChessEngine {
                 }
                 if (piece.getSide() == Faction.WHITE) { // a White piece helps White
                     score += piece.getValue() * 100; // so add its value (×100 -> centipawns)
+                    if (piece instanceof Pawn) { // White pawns also get a per-square bonus
+                        score += PAWN_PST[y][x]; // read the table directly (White's orientation)
+                    }
                 } else { // a Black piece helps Black
                     score -= piece.getValue() * 100; // so subtract its value (×100 -> centipawns)
+                    if (piece instanceof Pawn) { // Black pawns get the mirrored bonus
+                        score -= PAWN_PST[7 - y][x]; // flip the rank (7 - y) so the table mirrors onto Black
+                    }
                 }
             }
         }
