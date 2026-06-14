@@ -33,6 +33,12 @@ public class ChessEngine {
     // material total so a real mate always beats any material count.
     private static final int INFINITY = 1_000_000;
 
+    // Bonus for a king that has castled, in the same units as material (a pawn is
+    // worth ~1, see Pawn's value). 50 is about half a pawn: enough that the engine
+    // will castle when nothing more valuable is at stake, but not so much that it
+    // ignores a real capture to do it. Tune this up to make it castle more eagerly.
+    private static final int CASTLE_BONUS = 50;
+
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
 
@@ -150,8 +156,12 @@ public class ChessEngine {
      * as positive and Black pieces as negative. So a positive number means White
      * is ahead and a negative number means Black is ahead.
      *
-     * Real engines also weigh king safety, piece activity, pawn structure, etc.
-     * We leave those out on purpose to keep the prototype easy to follow.
+     * Real engines also weigh piece activity, pawn structure, etc. We keep just
+     * material plus a small king-safety term (a bonus for having castled).
+     *
+     * Scores are in "centipawns": we multiply each piece value by 100 so a pawn
+     * is worth 100. That gives small bonuses like {@link #CASTLE_BONUS} (50 = half
+     * a pawn) room to nudge ties without ever outweighing real material.
      */
     private int evaluate() {
         Cell[][] board = gameController.getGameState().getChessBoard().getBoard(); // the 8x8 grid of squares
@@ -163,13 +173,40 @@ public class ChessEngine {
                     continue; // skip to the next square
                 }
                 if (piece.getSide() == Faction.WHITE) { // a White piece helps White
-                    score += piece.getValue(); // so add its value
+                    score += piece.getValue() * 100; // so add its value (×100 -> centipawns)
                 } else { // a Black piece helps Black
-                    score -= piece.getValue(); // so subtract its value
+                    score -= piece.getValue() * 100; // so subtract its value (×100 -> centipawns)
                 }
             }
         }
-        return score; // the material balance for this position
+
+        // King safety: reward each side for having castled. A White castle pushes
+        // the score up (good for White); a Black castle pushes it down.
+        if (kingHasCastled(Faction.WHITE)) { // has White's king castled?
+            score += CASTLE_BONUS; // reward White
+        }
+        if (kingHasCastled(Faction.BLACK)) { // has Black's king castled?
+            score -= CASTLE_BONUS; // reward Black
+        }
+
+        return score; // material balance plus king-safety bonus, from White's view
+    }
+
+    /**
+     * Detects whether the given side has castled. We use a simple signal: castling
+     * is the only normal way a king lands on its short-castle square (g-file, x=6)
+     * or long-castle square (c-file, x=2) on its home rank having already moved.
+     */
+    private boolean kingHasCastled(Faction side) {
+        Cell[][] board = gameController.getGameState().getChessBoard().getBoard(); // the board to inspect
+        int homeRank = (side == Faction.WHITE) ? 0 : 7; // White's back rank is y=0, Black's is y=7
+        for (int x : new int[] { 2, 6 }) { // c-file (long castle) and g-file (short castle)
+            Piece piece = board[x][homeRank].getContain(); // what sits on that castled square
+            if (piece instanceof King && piece.getSide() == side && piece.getMoveCount() > 0) { // our king, and it has moved
+                return true; // a moved king on a castle square means it castled
+            }
+        }
+        return false; // king is not on a castled square (or hasn't moved) -> not castled
     }
 
     /**
