@@ -7,10 +7,13 @@ import entity.board.Cell; // one square of the board (knows its piece, if any)
 import entity.enums.Faction; // the colour enum: WHITE or BLACK
 import entity.move.Move; // the abstract "a move" type (NormalMove, Castling, Promotion, ...)
 import entity.move.Promotion; // a pawn-promotion move; we must fill in which piece it becomes
+import entity.pieces.Bishop; // bishops get a per-square bonus (piece-square table)
 import entity.pieces.King; // needed to locate the king when testing for check
+import entity.pieces.Knight; // knights get a per-square bonus (piece-square table)
 import entity.pieces.Pawn; // pawns get an extra per-square bonus (piece-square table)
 import entity.pieces.Piece; // the abstract "a chess piece" type
 import entity.pieces.Queen; // we always promote to a queen in this simple engine
+import entity.pieces.Rook; // rooks get a per-square bonus (piece-square table)
 import entity.state.GameState; // holds whose turn it is, the board, and the move history
 
 /**
@@ -57,6 +60,54 @@ public class ChessEngine {
             { 50, 50, 50, 50, 50, 50, 50, 50 }, // rank 7 (about to promote)
             { 0, 0, 0, 0, 0, 0, 0, 0 }, // rank 8 (promotion handled by material)
     };
+
+    private static final int[][] KNIGHT_PST = {
+        { -50, -15, -15, -15, -15, -15, -15, -50 }, // rank 1
+        { -20, 0, 0, 0, 0, 0, 0, -20 }, // rank 2
+        { -20, 0, 10, 5, 5, 10,0 , -20 }, // rank 3
+        { -20, 0, 5, 50, 50, 5, 0, -20 }, // rank 4
+        { -20, 0, 5, 50, 50, 5, 0, -20 }, // rank 5
+        { -20, 0, 10, 5, 5, 10, 0, -20}, // rank 6
+        { -20, 0, 0, 0, 0, 0, 0, -20 }, // rank 7
+        { -50, -15, -15, -15, -15, -15, -15, -50 } // rank 8
+        
+    };
+
+    private static final int[][] BISHOP_PST = {
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 1
+        { 0, 15, 5, 5, 5, 5, 15, 0}, // rank 2
+        { 0, 5, 30, 20, 20, 30, 5, 0}, // rank 3
+        { 0, 5, 20, 35, 35, 20, 5, 0}, // rank 4
+        { 0, 5, 20, 35, 35, 20, 5, 0}, // rank 5
+        { 0, 5, 30, 20, 20, 30, 5, 0}, // rank 6
+        { 0, 15, 5, 5, 5, 5, 15, 0}, // rank 7
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 8
+        
+    };
+    private static final int[][] ROOK_PST = {
+        { 20, 10, 10, 10, 10, 10, 10, 20}, // rank 1
+        { -10, 0, 0, 0, 0, 0, 0, -10}, // rank 2
+        { 5, 0, 0, 0, 0, 0,0, 5}, // rank 3
+        { 5, 10, 20, 30, 30, 20, 10, 5}, // rank 4
+        { 5, 10, 20, 30, 30, 20, 10, 5}, // rank 5
+        { 5, 10, 20, 30, 30, 20, 10, 5}, // rank 6
+        { 35, 40, 35, 45, 45, 35, 40, 35}, // rank 7
+        {30 , 30, 30, 35, 35, 30,30, 30}, // rank 8
+        
+    };
+    private static final int[][] QUEEN_PST = {
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 1
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 2
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 3
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 4
+        { 0, 0, 0, 0, 0, 0, 0, 0}, // rank 5
+        { 5, 10, 20, 30, 30, 20, 10, 5}, // rank 6
+        { 35, 40, 35, 45, 45, 35, 40, 35}, // rank 7
+        {30 , 30, 30, 35, 35, 30,30, 30}, // rank 8
+
+    };
+
+
 
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
@@ -191,16 +242,13 @@ public class ChessEngine {
                 if (piece == null) { // empty square contributes nothing
                     continue; // skip to the next square
                 }
+                int bonus = pieceSquareBonus(piece, x, y); // per-square positional bonus for this piece
                 if (piece.getSide() == Faction.WHITE) { // a White piece helps White
                     score += piece.getValue() * 100; // so add its value (×100 -> centipawns)
-                    if (piece instanceof Pawn) { // White pawns also get a per-square bonus
-                        score += PAWN_PST[y][x]; // read the table directly (White's orientation)
-                    }
+                    score += bonus; // plus its piece-square bonus (already in White's orientation)
                 } else { // a Black piece helps Black
                     score -= piece.getValue() * 100; // so subtract its value (×100 -> centipawns)
-                    if (piece instanceof Pawn) { // Black pawns get the mirrored bonus
-                        score -= PAWN_PST[7 - y][x]; // flip the rank (7 - y) so the table mirrors onto Black
-                    }
+                    score -= bonus; // minus its piece-square bonus (already mirrored onto Black)
                 }
             }
         }
@@ -215,6 +263,38 @@ public class ChessEngine {
         }
 
         return score; // material balance plus king-safety bonus, from White's view
+    }
+
+    /**
+     * Looks up the piece-square bonus (in centipawns) for a piece sitting on the
+     * square (x, y), where x is the file and y is the rank.
+     *
+     * Each piece type has its own table laid out from White's point of view, just
+     * like {@link #PAWN_PST}. White reads the table directly with the rank y; Black
+     * reads it flipped top-to-bottom (7 - y), which mirrors White's values onto
+     * Black's side of the board. The king has no table, so it scores 0 here.
+     *
+     * The returned value is always "good for the owner": positive means the square
+     * is a good one for that piece. {@link #evaluate} adds it for White and
+     * subtracts it for Black.
+     */
+    private int pieceSquareBonus(Piece piece, int x, int y) {
+        int[][] table; // the table that matches this piece type
+        if (piece instanceof Pawn) {
+            table = PAWN_PST;
+        } else if (piece instanceof Knight) {
+            table = KNIGHT_PST;
+        } else if (piece instanceof Bishop) {
+            table = BISHOP_PST;
+        } else if (piece instanceof Rook) {
+            table = ROOK_PST;
+        } else if (piece instanceof Queen) {
+            table = QUEEN_PST;
+        } else { // the king has no piece-square table in this simple engine
+            return 0;
+        }
+        int rank = (piece.getSide() == Faction.WHITE) ? y : 7 - y; // flip the rank for Black
+        return table[rank][x]; // read the bonus for this square, in White's orientation
     }
 
     /**
