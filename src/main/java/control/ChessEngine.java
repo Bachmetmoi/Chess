@@ -81,6 +81,12 @@ public class ChessEngine {
         if (legalMoves.isEmpty()) { // no moves at all means the game is already over (mate or stalemate)
             return null; // nothing to choose, so report "no move"
         }
+
+        Move bookMove = openingBookMove(state, legalMoves); // hardcoded opening reply, if one applies here
+        if (bookMove != null) { // a book move overrides the search (e.g. answer 1.e4 with 1...e5)
+            return bookMove; // play it straight away without thinking
+        }
+
         orderMoves(legalMoves); // try likely-best moves (captures/promotions) first so alpha-beta prunes hard
 
         int depth = effectiveSearchDepth(); // deepen the search in the endgame (cheap there, and decisive)
@@ -113,6 +119,66 @@ public class ChessEngine {
         }
 
         return bestMove; // hand back the best move we found
+    }
+
+    /**
+     * A tiny hardcoded "opening book": when the position matches a known opening we
+     * return the prepared reply instead of searching. Coordinates are board[x][y]
+     * with x = file (a=0 .. h=7) and y = rank (rank 1 = 0 .. rank 8 = 7).
+     *
+     * We play Black and follow one short line, matched against the exact move history:
+     *   1.e4 (e2-e4)            -> 1...e5  (e7-e5)
+     *   1.e4 e5 2.Nf3 (g1-f3)   -> 2...Nc6 (b8-c6)
+     * Each rule fires only when every preceding move matches, so the engine never
+     * blunders into a book reply that does not fit the position actually on the board.
+     *
+     * @return the book move to play, or {@code null} if no rule applies here
+     */
+    private Move openingBookMove(GameState state, List<Move> legalMoves) {
+        if (state.getTurn() != Faction.BLACK) { // the book only covers Black's replies
+            return null;
+        }
+        List<Move> history = state.getMoveHistory(); // the moves played so far
+
+        if (history.size() == 1) { // White has made only its first move
+            if (isMove(history.get(0), 4, 1, 4, 3)) { // 1.e4 (e2-e4)
+                return findLegalMove(legalMoves, 4, 6, 4, 4); // reply 1...e5 (e7-e5)
+            }
+            return null;
+        }
+
+        if (history.size() == 3) { // we are answering White's second move
+            if (isMove(history.get(0), 4, 1, 4, 3) // 1.e4
+                    && isMove(history.get(1), 4, 6, 4, 4) // 1...e5
+                    && isMove(history.get(2), 6, 0, 5, 2)) { // 2.Nf3 (g1-f3)
+                return findLegalMove(legalMoves, 1, 7, 2, 5); // reply 2...Nc6 (b8-c6)
+            }
+            return null;
+        }
+
+        return null; // no book rule covers this position: fall back to the search
+    }
+
+    /**
+     * True if {@code move} goes from (startX, startY) to (endX, endY). Used to match
+     * a played move (or a candidate reply) against the opening book's coordinates.
+     */
+    private boolean isMove(Move move, int startX, int startY, int endX, int endY) {
+        return move.getStartXPos() == startX && move.getStartYPos() == startY
+                && move.getEndXPos() == endX && move.getEndYPos() == endY;
+    }
+
+    /**
+     * Returns the legal move matching the given from/to squares, or {@code null} if
+     * no such move is legal here (so the caller falls back to the normal search).
+     */
+    private Move findLegalMove(List<Move> legalMoves, int startX, int startY, int endX, int endY) {
+        for (Move move : legalMoves) {
+            if (isMove(move, startX, startY, endX, endY)) {
+                return move;
+            }
+        }
+        return null;
     }
 
     /**
