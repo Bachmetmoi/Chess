@@ -37,6 +37,10 @@ public class Navigator {
         show(new GameScreen(this).getView());
     }
 
+    public void showEngineGame() {
+        show(new GameScreen(this, true).getView());
+    }
+
     private void show(Parent root) {
         if (scene == null) {
             scene = new Scene(root);

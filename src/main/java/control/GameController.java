@@ -22,6 +22,17 @@ import entity.pieces.Rook;
 import entity.state.GameState;
 
 public class GameController {
+    // The fifty-move rule draws after 50 moves BY EACH SIDE without a pawn move or
+    // capture, i.e. 100 half-moves (the unit moveUntilDraw counts in).
+    private static final int FIFTY_MOVE_PLIES = 100;
+
+    // For the engine's search we treat the SECOND occurrence of a position as a
+    // draw (rather than waiting for the rules' third), because a single repetition
+    // in the tree means the side can force the draw. This is what stops the engine
+    // from shuffling into a repetition when it is winning. Raise to 3 to make the
+    // search only avoid a strict, already-twice-repeated position.
+    private static final int SEARCH_REPETITION_LIMIT = 2;
+
     // attributes
     private GameState gameState;
     private LegalMove legalMove;
@@ -118,6 +129,11 @@ public class GameController {
             gameState.setTurn(Faction.BLACK);
         else
             gameState.setTurn(Faction.WHITE);
+
+        // record the resulting position for the threefold-repetition rule. Doing it
+        // here (not in checkGameStatus) keeps the count correct for BOTH real moves
+        // and the engine's search, and balances the unrecordPosition() in undoMove().
+        gameState.recordPosition(positionKey());
         return gameState;
 
     }
@@ -209,8 +225,9 @@ public class GameController {
 
     public Result checkGameStatus() {
         // threefold repetition: if the same position is reached three times the
-        // game is a draw, even when legal moves are still available
-        if (gameState.recordPosition(positionKey()) >= 3) {
+        // game is a draw, even when legal moves are still available. The current
+        // position was already recorded by executes(), so we just read the count.
+        if (gameState.positionCount(positionKey()) >= 3) {
             gameState.setGameStatus(Result.DRAW);
             return Result.DRAW;
         }
@@ -266,6 +283,22 @@ public class GameController {
         gameState.setGameStatus(Result.DRAW);
         return Result.DRAW;
 
+    }
+
+    /**
+     * True when the CURRENT position is already a draw by rule and so should be
+     * scored as 0 by the engine's search: the fifty-move counter has run out, or the
+     * position has repeated (see {@link #SEARCH_REPETITION_LIMIT}). This is what lets
+     * the engine recognise a draw and steer toward real progress instead of
+     * shuffling into a repetition when it is winning. Relies on executes() having
+     * recorded the position, so it must be called at a node the search has played
+     * into - not at the untouched root.
+     */
+    public boolean isDrawByRuleForSearch() {
+        if (moveUntilDraw >= FIFTY_MOVE_PLIES) { // fifty-move rule
+            return true;
+        }
+        return gameState.positionCount(positionKey()) >= SEARCH_REPETITION_LIMIT; // repetition
     }
 
     /**

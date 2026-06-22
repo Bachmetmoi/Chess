@@ -72,6 +72,15 @@ public class GameState {
     }
 
     /**
+     * Returns how many times the given position has occurred so far, without
+     * changing the count. Used to test for repetition (in the game rules and in the
+     * engine's search) when the position has already been recorded by a move.
+     */
+    public int positionCount(String positionKey) {
+        return positionHistory.getOrDefault(positionKey, 0);
+    }
+
+    /**
      * Removes one occurrence of the given position, undoing a previous
      * {@link #recordPosition} call. Keeps the threefold repetition counts in sync
      * when a move is taken back, so an undone repetition no longer counts.

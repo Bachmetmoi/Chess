@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import control.BoardSetup;
+import control.ChessEngine;
 import control.GameController;
 import entity.board.Cell;
 import entity.enums.Faction;
@@ -53,6 +54,12 @@ public class GameScreen extends Screen {
     // game
     private GameController gameController;
 
+    // engine opponent (only used in "Play vs Engine" mode)
+    private static final int ENGINE_DEPTH = 5; // how many half-moves the engine looks ahead
+    private final boolean vsEngine; // true when the human plays against the engine
+    private final Faction engineSide = Faction.BLACK; // the engine plays Black; the human plays White
+    private ChessEngine engine; // created on game start when vsEngine is true
+
     // view
     private final StackPane[][] squares = new StackPane[N][N];
     private Label statusLabel;
@@ -64,13 +71,23 @@ public class GameScreen extends Screen {
     private List<Move> selMoves = new ArrayList<>();
 
     public GameScreen(Navigator navigator) {
+        this(navigator, false);
+    }
+
+    public GameScreen(Navigator navigator, boolean vsEngine) {
         super(navigator);
+        this.vsEngine = vsEngine;
     }
 
     @Override
     public Parent getView() {
         gameController = new GameController();
         gameController.startGame(new BoardSetup());
+
+        // In engine mode, build the engine that will answer the human's moves.
+        if (vsEngine) {
+            engine = new ChessEngine(gameController, ENGINE_DEPTH);
+        }
 
         GridPane grid = new GridPane();
         grid.setAlignment(Pos.CENTER);
@@ -186,11 +203,43 @@ public class GameScreen extends Screen {
 
         clearSelection();
         gameController.checkGameStatus();
+
+        maybeEngineMove(); // if we're playing the engine, let it reply now
+
         redraw();
+    }
+
+    /**
+     * In engine mode, have the engine play its move whenever it is the engine's
+     * turn and the game is still going. The engine already fills in a queen for
+     * its own promotions, so no promotion dialog is needed here.
+     */
+    private void maybeEngineMove() {
+        if (!vsEngine || engine == null) {
+            return; // two-player game, or engine not ready: nothing to do
+        }
+        if (gameController.getGameState().getGameStatus() != Result.ONGOING) {
+            return; // the human's move just ended the game
+        }
+        if (gameController.getGameState().getTurn() != engineSide) {
+            return; // it's still the human's turn
+        }
+        Move reply = engine.findBestMove(); // ask the engine for its best move
+        if (reply == null) {
+            return; // no legal reply (mate/stalemate); checkGameStatus already set the result
+        }
+        gameController.executes(reply); // play the engine's move
+        gameController.checkGameStatus(); // update the result after the engine moved
     }
 
     private void undo() {
         gameController.undoMove();
+        // In engine mode, one undo takes back the engine's reply and leaves it on
+        // the engine's turn; undo once more so control returns to the human.
+        if (vsEngine && !gameController.getGameState().getMoveHistory().isEmpty()
+                && gameController.getGameState().getTurn() == engineSide) {
+            gameController.undoMove();
+        }
         gameController.getGameState().setGameStatus(Result.ONGOING);
         clearSelection();
         redraw();
