@@ -13,9 +13,7 @@ import entity.enums.Result;
 import entity.move.Move;
 import entity.move.Promotion;
 import entity.pieces.Bishop;
-import entity.pieces.King;
 import entity.pieces.Knight;
-import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.pieces.Queen;
 import entity.pieces.Rook;
@@ -34,7 +32,6 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
-import javafx.scene.text.Text;
 
 /**
  * The chessboard screen (two-player). Renders the board and pieces and drives
@@ -275,7 +272,7 @@ public class GameScreen extends Screen {
                 // piece glyph
                 Piece piece = board[x][y].getContain();
                 if (piece != null) {
-                    cell.getChildren().add(glyph(piece));
+                    cell.getChildren().add(PieceGlyphs.glyph(piece, SQUARE * 0.72));
                 }
 
                 // move hint
@@ -299,21 +296,6 @@ public class GameScreen extends Screen {
 
     private boolean isTarget(int x, int y) {
         return findMove(x, y) != null;
-    }
-
-    private Text glyph(Piece piece) {
-        Text t = new Text(symbol(piece));
-        t.setFont(Font.font("Segoe UI Symbol", SQUARE * 0.72));
-        if (piece.getSide() == Faction.WHITE) {
-            t.setFill(Color.WHITE);
-            t.setStroke(Color.web("#333333"));
-            t.setStrokeWidth(1.2);
-        } else {
-            t.setFill(Color.web("#202020"));
-            t.setStroke(Color.web("#202020"));
-            t.setStrokeWidth(1.2);
-        }
-        return t;
     }
 
     private void updateStatus() {
@@ -355,31 +337,5 @@ public class GameScreen extends Screen {
             return new Knight(side);
         }
         return new Queen(side);
-    }
-
-    // ----- glyphs -----
-
-    private String symbol(Piece piece) {
-        // Solid (filled) glyphs are used for both colours; the fill colour set in
-        // glyph() distinguishes white from black, which reads best on the board.
-        if (piece instanceof King) {
-            return "\u265A";
-        }
-        if (piece instanceof Queen) {
-            return "\u265B";
-        }
-        if (piece instanceof Rook) {
-            return "\u265C";
-        }
-        if (piece instanceof Bishop) {
-            return "\u265D";
-        }
-        if (piece instanceof Knight) {
-            return "\u265E";
-        }
-        if (piece instanceof Pawn) {
-            return "\u265F";
-        }
-        return "";
     }
 }

@@ -33,6 +33,10 @@ public class Navigator {
         show(new UnderDevelopmentScreen(this, feature).getView());
     }
 
+    public void showTrailer(String feature) {
+        show(new TrailerScreen(this, feature).getView());
+    }
+
     public void showGame() {
         show(new GameScreen(this).getView());
     }

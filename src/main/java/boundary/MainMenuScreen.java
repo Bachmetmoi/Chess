@@ -3,7 +3,7 @@ package boundary;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 
-/** First screen: Play, Fun chess, About us. */
+/** First screen: Play, Normal chess, About us. */
 public class MainMenuScreen extends Screen {
 
     public MainMenuScreen(Navigator navigator) {
@@ -15,22 +15,22 @@ public class MainMenuScreen extends Screen {
         Button play = menuButton("Play");
         play.setOnAction(e -> onPlay());
 
-        Button funChess = menuButton("Fun chess");
-        funChess.setOnAction(e -> onFunChess());
+        Button NormalChess = menuButton("Normal chess");
+        NormalChess.setOnAction(e -> onNormalChess());
 
         Button about = menuButton("About us");
         about.setOnAction(e -> onAbout());
 
         return rootBox(titleLabel("Chess"), subtitleLabel("A JavaFX chess app"),
-                play, funChess, about);
+                play, NormalChess, about);
     }
 
     private void onPlay() {
         navigator.showModeSelect();
     }
 
-    private void onFunChess() {
-        navigator.showUnderDevelopment("Fun chess");
+    private void onNormalChess() {
+        navigator.showUnderDevelopment("Normal chess");
     }
 
     private void onAbout() {

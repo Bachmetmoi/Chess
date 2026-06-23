@@ -18,6 +18,9 @@ public class UnderDevelopmentScreen extends Screen {
 
     @Override
     public Parent getView() {
+        Button trailer = menuButton("See Trailer");
+        trailer.setOnAction(e -> navigator.showTrailer(feature));
+
         Button back = secondaryButton("Back to menu");
         back.setOnAction(e -> onBack());
 
@@ -25,6 +28,7 @@ public class UnderDevelopmentScreen extends Screen {
                 titleLabel(feature),
                 subtitleLabel("Under development"),
                 subtitleLabel("This feature isn't ready yet \u2014 check back soon."),
+                trailer,
                 back);
     }
 
