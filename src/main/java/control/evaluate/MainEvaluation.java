@@ -42,6 +42,15 @@ public class MainEvaluation {
     // long-range reach make it the better minor in most open positions).
     private static final int BISHOP_VALUE = 312;
 
+    // A pawn's material worth is TAPERED by game phase instead of a flat 100 cp.
+    // In the middlegame a pawn is the least of the engine's worries - piece activity
+    // and king safety dominate - so it is valued below par at 70 cp. As the board
+    // empties and pawns become promotion candidates, each one grows in importance,
+    // so in a bare endgame it is worth 120 cp. We blend between the two by phase,
+    // exactly the way the king's piece-square table is blended (see pieceSquareScore).
+    private static final int PAWN_VALUE_MID = 70;
+    private static final int PAWN_VALUE_END = 120;
+
     // The game-phase total at the start of a game (a full board). Each non-pawn
     // piece adds a phase weight (minor = 1, rook = 2, queen = 4); per side that is
     // 2+2+1+1 +2+2 +4 = 12, times two sides = 24. As pieces are traded the total
@@ -57,12 +66,18 @@ public class MainEvaluation {
     // less than a fully open file, so about half the bonus.
     private static final int ROOK_HALF_OPEN_FILE_BONUS = 12;
 
-    // Bonus for a ROOK BATTERY: two (or more) friendly rooks doubled on the same
-    // file. They defend each other and pile pressure down the file, so a pair is
-    // much stronger than two scattered rooks. Awarded per extra rook on the file, so
-    // a normal pair earns it once; it stacks with the open-file bonus above, so
-    // doubled rooks on an open file are rewarded most of all.
-    private static final int ROOK_BATTERY_BONUS = 20;
+    // Bonus for a ROOK/QUEEN BATTERY: two (or more) friendly heavy pieces (rooks, or
+    // a queen backing them up - "Alekhine's gun") stacked on the same file with no
+    // pawn between them. A battery's strength comes almost entirely from the file it
+    // controls, so the bonus is NOT a single flat number: it scales with how open
+    // that file is for the owning side. On a fully open file a battery is heavy
+    // artillery; on a half-open file it leans on the enemy pawn; behind its own pawn
+    // it is passive and barely worth anything. Awarded per adjacent pair on the file
+    // (so a normal pair earns it once, three clear-stacked pieces twice). Stacks with
+    // {@link #rookFileScore}, which already rewards the open file per rook.
+    private static final int ROOK_BATTERY_OPEN = 30; // doubled on a fully open file
+    private static final int ROOK_BATTERY_HALF_OPEN = 18; // doubled on a half-open file (enemy pawn ahead)
+    private static final int ROOK_BATTERY_CLOSED = 5; // doubled behind our own pawn: passive
 
     // Bonus for CONNECTED ROOKS: two friendly rooks on the same RANK (row) with no
     // pawn between them, so they defend each other and sweep the rank together
@@ -193,7 +208,7 @@ public class MainEvaluation {
      */
     public int evaluate(Cell[][] board, int ply) {
         int phase = gamePhase(board); // PHASE_MAX = full board, 0 = bare endgame
-        int score = pieceRawMaterial(board); // raw material is the same in any phase
+        int score = pieceRawMaterial(board, phase); // material; pawn value tapered by phase
         score += pieceSquareScore(board, phase); // positional bonuses, king blended by phase
         score += rookFileScore(board); // reward rooks on open / half-open files
         score += rookBatteryScore(board); // reward doubled rooks on the same file
@@ -212,9 +227,11 @@ public class MainEvaluation {
      * out (both sides always have exactly one), so they make no difference here.
      *
      * @param board the 8x8 grid of squares to score
+     * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame),
+     *              used to taper the pawn value between its mid and end worth
      * @return the material balance in centipawns, from White's point of view
      */
-    public int pieceRawMaterial(Cell[][] board) {
+    public int pieceRawMaterial(Cell[][] board, int phase) {
         int score = 0; // running total, from White's perspective
         for (int x = 0; x < 8; x++) { // walk every file (column)
             for (int y = 0; y < 8; y++) { // walk every rank (row)
@@ -222,7 +239,7 @@ public class MainEvaluation {
                 if (piece == null) { // empty square contributes nothing
                     continue; // skip to the next square
                 }
-                int value = materialValue(piece); // this piece's worth in centipawns
+                int value = materialValue(piece, phase); // this piece's worth in centipawns
                 if (piece.getSide() == Faction.WHITE) { // a White piece helps White
                     score += value; // so add its value
                 } else { // a Black piece helps Black
@@ -235,13 +252,22 @@ public class MainEvaluation {
 
     /**
      * This piece's material worth in centipawns. Everything uses its plain
-     * {@link Piece#getValue} times {@link #CENTIPAWNS}, except the bishop, which is
-     * nudged to {@link #BISHOP_VALUE} (312) so the engine values it just above a
-     * knight and won't trade the two off for free.
+     * {@link Piece#getValue} times {@link #CENTIPAWNS}, except two pieces: the bishop
+     * is nudged to {@link #BISHOP_VALUE} (312) so the engine values it just above a
+     * knight and won't trade the two off for free, and the PAWN is tapered between
+     * {@link #PAWN_VALUE_MID} (70 cp in the middlegame) and {@link #PAWN_VALUE_END}
+     * (120 cp in a bare endgame) by the game phase.
+     *
+     * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame)
      */
-    private int materialValue(Piece piece) {
+    private int materialValue(Piece piece, int phase) {
         if (piece instanceof Bishop) {
             return BISHOP_VALUE; // a touch more than a knight's 300
+        }
+        if (piece instanceof Pawn) {
+            // Blend the two pawn worths by phase: PAWN_VALUE_MID at PHASE_MAX,
+            // PAWN_VALUE_END at 0, smoothly in between (same taper as the king table).
+            return (PAWN_VALUE_MID * phase + PAWN_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
         }
         return piece.getValue() * CENTIPAWNS; // every other piece keeps its plain value
     }
@@ -364,42 +390,71 @@ public class MainEvaluation {
     }
 
     /**
-     * Rewards ROOK BATTERIES: two or more friendly rooks doubled on the same file
-     * with NO PAWN standing between them. Doubled rooks defend each other and pile
-     * pressure down the file, but only if the file between them is not blocked by a
-     * pawn - a piece in between is fine (it can step aside), a pawn is not. We award
-     * {@link #ROOK_BATTERY_BONUS} for each adjacent pair of friendly rooks on a file
-     * whose connecting squares hold no pawn (so a normal pair earns it once, three
-     * clear-stacked rooks twice). Returned from White's point of view; this stacks
-     * with {@link #rookFileScore}, so a battery on an open file collects both bonuses.
+     * Rewards ROOK/QUEEN BATTERIES: two or more friendly heavy pieces (rooks, or a
+     * queen backing them) stacked on the same file with NO PAWN standing between them.
+     * A battery defends itself and piles pressure down the file, but only if the file
+     * between the pieces is not blocked by a pawn - a piece in between is fine (it can
+     * step aside), a pawn is not. The bonus is scaled by how open the file is for the
+     * owning side ({@link #ROOK_BATTERY_OPEN} / {@link #ROOK_BATTERY_HALF_OPEN} /
+     * {@link #ROOK_BATTERY_CLOSED}), because that is what actually makes a battery
+     * strong or pointless. Awarded per adjacent pair on the file (so a normal pair
+     * earns it once, three clear-stacked pieces twice). Returned from White's point of
+     * view; this stacks with {@link #rookFileScore}, which rewards the open file per
+     * rook.
      *
      * @param board the 8x8 grid of squares to inspect
-     * @return the rook-battery bonus total in centipawns, from White's point of view
+     * @return the battery bonus total in centipawns, from White's point of view
      */
     private int rookBatteryScore(Cell[][] board) {
+        int[] whitePawns = new int[8]; // how many White pawns stand on each file
+        int[] blackPawns = new int[8]; // how many Black pawns stand on each file
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                Piece piece = board[x][y].getContain();
+                if (piece instanceof Pawn) {
+                    if (piece.getSide() == Faction.WHITE) {
+                        whitePawns[x]++;
+                    } else {
+                        blackPawns[x]++;
+                    }
+                }
+            }
+        }
+
         int score = 0; // from White's perspective
-        score += fileBatteryBonus(board, Faction.WHITE); // White's batteries help White
-        score -= fileBatteryBonus(board, Faction.BLACK); // Black's batteries help Black
-        return score; // total rook-battery bonus
+        score += fileBatteryBonus(board, Faction.WHITE, whitePawns, blackPawns); // White's batteries help White
+        score -= fileBatteryBonus(board, Faction.BLACK, whitePawns, blackPawns); // Black's batteries help Black
+        return score; // total battery bonus
     }
 
     /**
-     * Sums one side's rook-battery bonuses: for every file, pairs each friendly rook
-     * with the next friendly rook above it and awards {@link #ROOK_BATTERY_BONUS} when
-     * no pawn sits between them. Always returns a non-negative total (the caller
-     * applies the sign for the side).
+     * Sums one side's battery bonuses: for every file, pairs each friendly heavy piece
+     * (rook or queen) with the next one above it and, when no pawn sits between them,
+     * awards a bonus scaled by how open the file is for this side - full value on a
+     * fully open file, less on a half-open one, almost nothing behind our own pawn.
+     * Always returns a non-negative total (the caller applies the sign for the side).
+     *
+     * @param whitePawns White pawns per file, blackPawns Black pawns per file (shared
+     *                   with {@link #rookBatteryScore} so we do not rescan the board)
      */
-    private int fileBatteryBonus(Cell[][] board, Faction side) {
+    private int fileBatteryBonus(Cell[][] board, Faction side, int[] whitePawns, int[] blackPawns) {
+        boolean white = side == Faction.WHITE;
         int total = 0; // running bonus for this side
         for (int x = 0; x < 8; x++) { // every file
-            int prevRookY = -1; // rank of the last friendly rook seen on this file (-1 = none yet)
+            boolean ownPawnOnFile = (white ? whitePawns[x] : blackPawns[x]) > 0; // our pawn blocks the file
+            boolean enemyPawnOnFile = (white ? blackPawns[x] : whitePawns[x]) > 0; // an enemy pawn on the file
+            int bonus = ownPawnOnFile ? ROOK_BATTERY_CLOSED // passive behind our own pawn
+                    : enemyPawnOnFile ? ROOK_BATTERY_HALF_OPEN // leans on the enemy pawn
+                            : ROOK_BATTERY_OPEN; // heavy artillery on an open file
+
+            int prevHeavyY = -1; // rank of the last friendly heavy piece on this file (-1 = none yet)
             for (int y = 0; y < 8; y++) { // scan the file from rank 1 upward
                 Piece piece = board[x][y].getContain(); // piece on this square, if any
-                if (piece instanceof Rook && piece.getSide() == side) { // a friendly rook
-                    if (prevRookY >= 0 && noPawnBetween(board, x, prevRookY, y)) { // doubled with a clear path
-                        total += ROOK_BATTERY_BONUS; // they form a working battery
+                if ((piece instanceof Rook || piece instanceof Queen) && piece.getSide() == side) { // a heavy piece
+                    if (prevHeavyY >= 0 && noPawnBetween(board, x, prevHeavyY, y)) { // doubled with a clear path
+                        total += bonus; // they form a working battery
                     }
-                    prevRookY = y; // remember this rook for the next pairing
+                    prevHeavyY = y; // remember this piece for the next pairing
                 }
             }
         }
