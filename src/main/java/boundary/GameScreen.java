@@ -272,7 +272,6 @@ public class GameScreen extends Screen {
         }
         layoutGrid();
         clearSelection();
-        maybeEngineMove(); // let the engine move if the flip put it on the move
         redraw();
     }
 
