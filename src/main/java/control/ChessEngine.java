@@ -1,6 +1,7 @@
 package control; // same package as GameController/LegalMove so the engine sits with the other game logic
 
 import java.util.ArrayList; // a growable list, used to collect the legal moves we generate
+import java.util.Arrays; // used to clear the history table at the start of each search
 import java.util.List; // the List interface type we pass around
 
 import control.evaluate.MainEvaluation; // scores a leaf position (material + positional terms)
@@ -57,8 +58,36 @@ public class ChessEngine {
     private static final int ENDGAME_DEPTH_BONUS = 2;    // extra plies once in an endgame
     private static final int LATE_ENDGAME_DEPTH_BONUS = 4; // extra plies in a bare endgame
 
+    // ---- Time limit for the (deep) endgame search ----
+    // The endgame depth bonuses above can make a single fixed-depth search run for a
+    // long time on a crowded ending. To keep the engine responsive we cap the endgame
+    // search at this wall-clock budget and search it by ITERATIVE DEEPENING: we look
+    // one ply deeper each pass, keep the best move from the last pass that FINISHED in
+    // time, and stop as soon as the budget is spent. Only the endgame is timed; the
+    // opening/middlegame keeps its old single fixed-depth search.
+    private static final long ENDGAME_TIME_LIMIT_NANOS = 15L * 1_000_000_000L; // 15 seconds
+
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
+
+    // Set per call to findBestMove: when timeLimited is true the search must stop once
+    // System.nanoTime() reaches deadlineNanos (checked by checkTime, which unwinds the
+    // recursion by throwing SearchTimeout). Untimed searches leave timeLimited false.
+    private boolean timeLimited; // is the current search subject to the endgame clock?
+    private long deadlineNanos; // wall-clock instant (System.nanoTime) at which to abort
+
+    // ---- Move-ordering memory (rebuilt for each findBestMove call) ----
+    // Good move ordering is what makes alpha-beta prune hard, so beyond MVV-LVA we
+    // remember two extra signals about QUIET moves that turned out to refute a branch:
+    //   * KILLER MOVES: up to two quiet moves, per search depth, that most recently
+    //     caused a beta cut-off at that depth. The same move often refutes sibling
+    //     positions too, so we try it early.
+    //   * HISTORY HEURISTIC: a [from-square][to-square] tally, bumped whenever a quiet
+    //     move causes a cut-off (by depth*depth, so deeper cut-offs count for more).
+    //     Quiet moves are then ordered by this score.
+    private static final int MAX_KILLER_DEPTH = 64; // plenty: base depth + endgame bonus stays well under this
+    private final Move[][] killers = new Move[MAX_KILLER_DEPTH][2]; // killers[depth][0..1]
+    private final int[][] history = new int[64][64]; // history[fromSquare][toSquare], squares packed as x*8+y
 
     /**
      * @param gameController the controller holding the board we want to analyse
@@ -87,21 +116,55 @@ public class ChessEngine {
             return bookMove; // play it straight away without thinking
         }
 
+        clearOrderingMemory(); // start each decision with fresh killer/history tables
         orderMoves(legalMoves); // try likely-best moves (captures/promotions) first so alpha-beta prunes hard
 
-        int depth = effectiveSearchDepth(); // deepen the search in the endgame (cheap there, and decisive)
+        int targetDepth = effectiveSearchDepth(); // deepen the search in the endgame (cheap there, and decisive)
+        timeLimited = targetDepth > searchDepth; // the depth bonus only fires in the endgame -> that's when we time it
+        deadlineNanos = System.nanoTime() + ENDGAME_TIME_LIMIT_NANOS; // when to stop (only consulted if timeLimited)
 
-        Move bestMove = null; // the best move found so far (none yet)
+        // Untimed (opening/middlegame): one search straight to the target depth, exactly
+        // as before. Timed (endgame): ITERATIVE DEEPENING - search depth 1, 2, ... up to
+        // the target, keeping the best move from the last depth that finished within the
+        // budget, and stop the moment the clock runs out.
+        Move bestMove = legalMoves.get(0); // safe fallback (best-ordered move) if even depth 1 can't finish
+        int startDepth = timeLimited ? 1 : targetDepth;
+        for (int depth = startDepth; depth <= targetDepth; depth++) {
+            try {
+                Move move = searchRoot(depth, whiteToMove, legalMoves); // full search at this depth
+                if (move != null) {
+                    bestMove = move; // this depth completed in time, so trust its (deeper) verdict
+                }
+            } catch (SearchTimeout e) {
+                break; // ran out of time mid-depth: keep the best move from the last finished depth
+            }
+        }
+        return bestMove; // hand back the best move we found
+    }
+
+    /**
+     * One full root search at a fixed {@code depth}: tries every candidate move and
+     * returns the best one for the side to move, using the same alpha-beta logic the
+     * old single-pass loop used. May throw {@link SearchTimeout} if the endgame clock
+     * runs out mid-search; the move played here is always undone first (try/finally),
+     * so the board is left untouched however this returns.
+     */
+    private Move searchRoot(int depth, boolean whiteToMove, List<Move> legalMoves) {
+        Move bestMove = null; // the best move found so far at this depth (none yet)
         int bestScore = whiteToMove ? -INFINITY : INFINITY; // start at the worst possible score for our side
         int alpha = -INFINITY; // alpha = best score the maximiser (White) can already guarantee
         int beta = INFINITY; // beta  = best score the minimiser (Black) can already guarantee
 
         for (Move move : legalMoves) { // try each candidate move one at a time
             gameController.executes(move); // play the move on the real board (this also flips the turn)
-            // Score this move by looking ahead. After our move it is the OTHER
-            // side's turn, so the recursion's "maximising" flag flips.
-            int score = minimax(depth - 1, alpha, beta, !whiteToMove);
-            gameController.undoMove(); // take the move back so the board is unchanged for the next candidate
+            int score;
+            try {
+                // Score this move by looking ahead. After our move it is the OTHER
+                // side's turn, so the recursion's "maximising" flag flips.
+                score = minimax(depth - 1, alpha, beta, !whiteToMove);
+            } finally {
+                gameController.undoMove(); // take the move back even if the search aborts on the clock
+            }
 
             if (whiteToMove) { // White is the maximiser: keep the move with the HIGHEST score
                 if (score > bestScore) { // found a better move for White?
@@ -117,8 +180,32 @@ public class ChessEngine {
                 beta = Math.min(beta, bestScore); // Black can now guarantee at most this much
             }
         }
+        return bestMove; // the best move at this depth
+    }
 
-        return bestMove; // hand back the best move we found
+    /**
+     * Thrown to unwind the recursion the instant the endgame time budget is spent.
+     * Carries no stack trace (it is control flow, not an error) so throwing it is
+     * cheap; a single shared instance, {@link #TIMEOUT}, is reused for every abort.
+     */
+    private static final class SearchTimeout extends RuntimeException {
+        private SearchTimeout() {
+            super(null, null, false, false); // no message, no cause, no suppression, no stack trace
+        }
+    }
+
+    private static final SearchTimeout TIMEOUT = new SearchTimeout(); // reused on every abort (no allocation)
+
+    /**
+     * Aborts the search by throwing {@link #TIMEOUT} once the endgame clock has run
+     * out. A no-op for untimed (opening/middlegame) searches. Called at the top of
+     * every search node, so the abort happens between nodes - the try/finally blocks
+     * around each move then undo everything as the exception unwinds.
+     */
+    private void checkTime() {
+        if (timeLimited && System.nanoTime() >= deadlineNanos) {
+            throw TIMEOUT;
+        }
     }
 
     /**
@@ -211,6 +298,7 @@ public class ChessEngine {
      * @return the position's value, in centipawn-like units, from White's point of view
      */
     private int minimax(int depth, int alpha, int beta, boolean maximizing) {
+        checkTime(); // bail out (by throwing) if the endgame time budget is spent
         List<Move> legalMoves = generateLegalMoves(); // all legal replies for whoever is to move here
 
         if (legalMoves.isEmpty()) { // no legal moves: the game ends at this node
@@ -241,17 +329,26 @@ public class ChessEngine {
             return quiescence(alpha, beta, maximizing, QUIESCENCE_MAX_PLY);
         }
 
-        orderMoves(legalMoves); // search promising moves first to maximise alpha-beta cut-offs
+        orderMoves(legalMoves, depth); // search promising moves first to maximise alpha-beta cut-offs
 
+        Cell[][] board = gameController.getGameState().getChessBoard().getBoard(); // to tell captures from quiet moves
         if (maximizing) { // White to move: try to MAXIMISE the score
             int best = -INFINITY; // start from the worst possible value for the maximiser
             for (Move move : legalMoves) { // examine each legal move
+                boolean quiet = isQuietMove(board, move); // remember before playing it (board changes after)
                 gameController.executes(move); // play it (also flips the turn)
-                int score = minimax(depth - 1, alpha, beta, false); // recurse; now it's the minimiser's turn
-                gameController.undoMove(); // undo so siblings start from the same position
+                int score;
+                try {
+                    score = minimax(depth - 1, alpha, beta, false); // recurse; now it's the minimiser's turn
+                } finally {
+                    gameController.undoMove(); // undo even if the search aborts on the clock
+                }
                 best = Math.max(best, score); // keep the highest score seen so far
                 alpha = Math.max(alpha, best); // raise the maximiser's guaranteed floor
                 if (beta <= alpha) { // BETA CUT-OFF: the minimiser already has a better option elsewhere,
+                    if (quiet) {
+                        recordCutoff(move, depth); // a quiet move that refutes this branch: remember it for ordering
+                    }
                     break; // so it would never let us reach this branch -> stop searching it
                 }
             }
@@ -259,12 +356,20 @@ public class ChessEngine {
         } else { // Black to move: try to MINIMISE the score
             int best = INFINITY; // start from the worst possible value for the minimiser
             for (Move move : legalMoves) { // examine each legal move
+                boolean quiet = isQuietMove(board, move); // remember before playing it (board changes after)
                 gameController.executes(move); // play it (also flips the turn)
-                int score = minimax(depth - 1, alpha, beta, true); // recurse; now it's the maximiser's turn
-                gameController.undoMove(); // undo so siblings start from the same position
+                int score;
+                try {
+                    score = minimax(depth - 1, alpha, beta, true); // recurse; now it's the maximiser's turn
+                } finally {
+                    gameController.undoMove(); // undo even if the search aborts on the clock
+                }
                 best = Math.min(best, score); // keep the lowest score seen so far
                 beta = Math.min(beta, best); // lower the minimiser's guaranteed ceiling
                 if (beta <= alpha) { // ALPHA CUT-OFF: the maximiser already has a better option elsewhere,
+                    if (quiet) {
+                        recordCutoff(move, depth); // a quiet move that refutes this branch: remember it for ordering
+                    }
                     break; // so it would never let us reach this branch -> stop searching it
                 }
             }
@@ -299,6 +404,7 @@ public class ChessEngine {
      * @return the quiet position value, from White's point of view
      */
     private int quiescence(int alpha, int beta, boolean maximizing, int qPly) {
+        checkTime(); // bail out (by throwing) if the endgame time budget is spent
         int standPat = evaluate(); // the score if the side to move makes no capture at all
 
         // Safety net: stop chasing captures past a fixed depth. Without a cap a long
@@ -319,8 +425,12 @@ public class ChessEngine {
             }
             for (Move move : captures) { // try each capture
                 gameController.executes(move); // play it (flips the turn)
-                int score = quiescence(alpha, beta, false, qPly - 1); // keep resolving captures for the other side
-                gameController.undoMove(); // take it back
+                int score;
+                try {
+                    score = quiescence(alpha, beta, false, qPly - 1); // keep resolving captures for the other side
+                } finally {
+                    gameController.undoMove(); // take it back even if the search aborts on the clock
+                }
                 best = Math.max(best, score); // keep the best capture sequence
                 alpha = Math.max(alpha, best); // raise the floor
                 if (alpha >= beta) { // beta cut-off
@@ -336,8 +446,12 @@ public class ChessEngine {
             }
             for (Move move : captures) { // try each capture
                 gameController.executes(move); // play it (flips the turn)
-                int score = quiescence(alpha, beta, true, qPly - 1); // keep resolving captures for the other side
-                gameController.undoMove(); // take it back
+                int score;
+                try {
+                    score = quiescence(alpha, beta, true, qPly - 1); // keep resolving captures for the other side
+                } finally {
+                    gameController.undoMove(); // take it back even if the search aborts on the clock
+                }
                 best = Math.min(best, score); // keep the best (lowest) capture sequence
                 beta = Math.min(beta, best); // lower the ceiling
                 if (alpha >= beta) { // alpha cut-off
@@ -358,27 +472,109 @@ public class ChessEngine {
      * highest, and promotions get a bonus. Quiet moves keep their generated order.
      */
     private void orderMoves(List<Move> moves) {
-        Cell[][] board = gameController.getGameState().getChessBoard().getBoard();
-        moves.sort((a, b) -> moveScore(board, b) - moveScore(board, a)); // descending: best score first
+        orderMoves(moves, -1); // -1 = no killer table for this depth (root / quiescence)
     }
 
     /**
-     * A rough "how interesting is this move" score used only for ordering (not for
-     * evaluation). Capturing a valuable piece with a cheap one scores high; a
-     * promotion adds a bonus; everything else scores 0.
+     * Orders {@code moves} in place for a node at the given remaining {@code depth},
+     * so the killer moves stored for that depth can be tried early. Pass {@code -1}
+     * where no depth applies (the root and the quiescence search, which sees only
+     * captures anyway).
      */
-    private int moveScore(Cell[][] board, Move move) {
+    private void orderMoves(List<Move> moves, int depth) {
+        Cell[][] board = gameController.getGameState().getChessBoard().getBoard();
+        moves.sort((a, b) -> moveScore(board, b, depth) - moveScore(board, a, depth)); // descending: best first
+    }
+
+    // Ordering tiers, kept apart so a higher class of move always sorts before a lower
+    // one: any capture (CAPTURE_BASE) outranks a promotion, which outranks a killer,
+    // which outranks a history-ranked quiet move (history is capped below the killers).
+    private static final int CAPTURE_BASE = 10_000;
+    private static final int PROMOTION_BONUS = 9_000;
+    private static final int KILLER_1_BONUS = 8_000;
+    private static final int KILLER_2_BONUS = 7_000;
+    private static final int HISTORY_CAP = 6_000; // quiet-move history can never reach the killer tier
+
+    /**
+     * A rough "how interesting is this move" score used only for ordering (not for
+     * evaluation). Captures rank highest (MVV-LVA: big victim, small attacker), then
+     * promotions, then the two killer moves for this depth, then quiet moves by their
+     * history score. {@code depth} is the node's remaining depth, or -1 if none.
+     */
+    private int moveScore(Cell[][] board, Move move, int depth) {
         int score = 0;
         Piece victim = board[move.getEndXPos()][move.getEndYPos()].getContain(); // piece sitting on the target square
         if (victim != null) { // this move is a capture
             // +base so any capture outranks any quiet move; then reward a big victim
             // and a small attacker (×10 keeps victim value dominant over attacker).
-            score += 10_000 + victim.getValue() * 10 - move.getPiece().getValue();
+            score += CAPTURE_BASE + victim.getValue() * 10 - move.getPiece().getValue();
         }
         if (move instanceof Promotion) { // turning a pawn into a queen is almost always worth looking at early
-            score += 9_000;
+            score += PROMOTION_BONUS;
         }
-        return score;
+        if (score != 0) { // a capture and/or promotion is already ranked above all quiet moves
+            return score;
+        }
+
+        // Quiet move: prefer this depth's killers, then fall back to the history score.
+        if (depth >= 0 && depth < MAX_KILLER_DEPTH) {
+            if (sameMove(move, killers[depth][0])) {
+                return KILLER_1_BONUS;
+            }
+            if (sameMove(move, killers[depth][1])) {
+                return KILLER_2_BONUS;
+            }
+        }
+        int from = move.getStartXPos() * 8 + move.getStartYPos();
+        int to = move.getEndXPos() * 8 + move.getEndYPos();
+        return Math.min(history[from][to], HISTORY_CAP); // capped so history never jumps above a killer
+    }
+
+    /**
+     * Records a quiet move that caused a beta cut-off at {@code depth}, so the search
+     * tries it earlier in sibling positions: it becomes this depth's first killer
+     * (shifting the old one to the second slot) and its history score is bumped by
+     * {@code depth*depth} (deeper cut-offs are stronger evidence the move is good).
+     */
+    private void recordCutoff(Move move, int depth) {
+        if (depth >= 0 && depth < MAX_KILLER_DEPTH) {
+            if (!sameMove(move, killers[depth][0])) { // avoid storing the same move in both slots
+                killers[depth][1] = killers[depth][0]; // demote the previous killer
+                killers[depth][0] = move; // newest cut-off move becomes the primary killer
+            }
+        }
+        int from = move.getStartXPos() * 8 + move.getStartYPos();
+        int to = move.getEndXPos() * 8 + move.getEndYPos();
+        history[from][to] += depth * depth;
+    }
+
+    /**
+     * A move is "quiet" when it neither captures nor promotes - exactly the moves the
+     * killer/history heuristics track (captures are already ordered well by MVV-LVA).
+     * Must be called BEFORE the move is played, while the target square still holds
+     * any captured piece.
+     */
+    private boolean isQuietMove(Cell[][] board, Move move) {
+        Piece target = board[move.getEndXPos()][move.getEndYPos()].getContain();
+        return target == null && !(move instanceof Promotion);
+    }
+
+    /** True if two moves share the same from- and to-square (enough for ordering). */
+    private boolean sameMove(Move a, Move b) {
+        return b != null
+                && a.getStartXPos() == b.getStartXPos() && a.getStartYPos() == b.getStartYPos()
+                && a.getEndXPos() == b.getEndXPos() && a.getEndYPos() == b.getEndYPos();
+    }
+
+    /** Clears the killer and history tables so a new search starts with no stale hints. */
+    private void clearOrderingMemory() {
+        for (Move[] depthKillers : killers) {
+            depthKillers[0] = null;
+            depthKillers[1] = null;
+        }
+        for (int[] row : history) {
+            Arrays.fill(row, 0);
+        }
     }
 
     /**
@@ -388,16 +584,35 @@ public class ChessEngine {
      * detected here - a deliberate simplification.)
      */
     private List<Move> generateCaptureMoves() {
-        Cell[][] board = gameController.getGameState().getChessBoard().getBoard(); // the board to read targets from
-        Faction sideToMove = gameController.getGameState().getTurn(); // whose captures we want
+        GameState state = gameController.getGameState();
+        Cell[][] board = state.getChessBoard().getBoard(); // the board to read targets from
+        Faction sideToMove = state.getTurn(); // whose captures we want
+        List<Move> history = state.getMoveHistory(); // needed so pawns can detect en passant
+        LegalMove legalMove = gameController.getLegalMove(); // the rules object that filters out illegal moves
+        int[] king = legalMove.findKing(sideToMove); // locate our king ONCE for the legality checks below
+
         List<Move> captures = new ArrayList<>(); // collected capturing moves
-        for (Move move : generateLegalMoves()) { // start from the fully legal move list
-            Piece target = board[move.getEndXPos()][move.getEndYPos()].getContain(); // what sits on the target square
-            if (target != null && target.getSide() != sideToMove) { // an enemy piece there => this move captures
-                captures.add(move); // keep it
+        for (int x = 0; x < 8; x++) { // scan every file
+            for (int y = 0; y < 8; y++) { // scan every rank
+                Piece piece = board[x][y].getContain(); // piece on this square, if any
+                if (piece == null || piece.getSide() != sideToMove) { // only our own pieces can move
+                    continue;
+                }
+                for (Move move : piece.move(board, x, y, history)) { // this piece's candidate moves
+                    Piece target = board[move.getEndXPos()][move.getEndYPos()].getContain(); // what sits on the target
+                    if (target == null || target.getSide() == sideToMove) { // empty or friendly => not a capture
+                        continue; // skip it WITHOUT paying the legality check (the win over filtering the full list)
+                    }
+                    if (move instanceof Promotion) { // a capturing promotion: default the new piece to a queen
+                        ((Promotion) move).setPiecePromoted(new Queen(sideToMove));
+                    }
+                    if (legalMove.isLegalWithKing(move, king[0], king[1])) { // legal capture (king stays safe)?
+                        captures.add(move); // keep it
+                    }
+                }
             }
         }
-        return captures; // just the captures
+        return captures; // just the legal captures
     }
 
     /**
@@ -426,6 +641,7 @@ public class ChessEngine {
         Faction sideToMove = state.getTurn(); // the colour we are generating moves for
         List<Move> history = state.getMoveHistory(); // needed so pawns can detect en passant
         LegalMove legalMove = gameController.getLegalMove(); // the rules object that filters out illegal moves
+        int[] king = legalMove.findKing(sideToMove); // locate our king ONCE, then reuse it for every move below
 
         List<Move> legalMoves = new ArrayList<>(); // where we collect the moves that survive filtering
 
@@ -439,7 +655,7 @@ public class ChessEngine {
                     if (move instanceof Promotion) { // pawn reaching the last rank: the generator left the
                         ((Promotion) move).setPiecePromoted(new Queen(sideToMove)); // promoted piece blank, so default it to a queen
                     }
-                    if (legalMove.isLegal(move)) { // does this move leave our king safe (i.e. is it truly legal)?
+                    if (legalMove.isLegalWithKing(move, king[0], king[1])) { // truly legal (our king stays safe)?
                         legalMoves.add(move); // if so, keep it
                     }
                 }

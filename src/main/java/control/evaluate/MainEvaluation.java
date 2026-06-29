@@ -34,22 +34,24 @@ public class MainEvaluation {
     // whole piece. Multiplying each Piece's value by this keeps that convention.
     private static final int CENTIPAWNS = 100;
 
-    // A bishop is worth slightly MORE than a knight (3.12 vs 3.00 pawns = 312 cp).
-    // The two pieces share the same integer value (3) for move ordering, but here -
-    // where actual trade decisions are scored - the small edge stops the engine
-    // from
-    // casually swapping its bishop for a knight in the opening (the bishop pair and
-    // long-range reach make it the better minor in most open positions).
-    private static final int BISHOP_VALUE = 312;
-
     // A pawn's material worth is TAPERED by game phase instead of a flat 100 cp.
-    // In the middlegame a pawn is the least of the engine's worries - piece activity
+    // In the middlegame a pawn is the least of the engine's worries - piece
+    // activity
     // and king safety dominate - so it is valued below par at 70 cp. As the board
     // empties and pawns become promotion candidates, each one grows in importance,
     // so in a bare endgame it is worth 120 cp. We blend between the two by phase,
-    // exactly the way the king's piece-square table is blended (see pieceSquareScore).
-    private static final int PAWN_VALUE_MID = 70;
-    private static final int PAWN_VALUE_END = 120;
+    // exactly the way the king's piece-square table is blended (see
+    // pieceSquareScore).
+    private static final int PAWN_VALUE_MID = 124;
+    private static final int PAWN_VALUE_END = 206;
+    private static final int KNIGHT_VALUE_MID = 781;
+    private static final int KNIGHT_VALUE_END = 854;
+    private static final int BISHOP_VALUE_MID = 825;
+    private static final int BISHOP_VALUE_END = 915;
+    private static final int ROOK_VALUE_MID = 1276;
+    private static final int ROOK_VALUE_END = 1380;
+    private static final int QUEEN_VALUE_MID = 2538;
+    private static final int QUEEN_VALUE_END = 2682;
 
     // The game-phase total at the start of a game (a full board). Each non-pawn
     // piece adds a phase weight (minor = 1, rook = 2, queen = 4); per side that is
@@ -66,14 +68,19 @@ public class MainEvaluation {
     // less than a fully open file, so about half the bonus.
     private static final int ROOK_HALF_OPEN_FILE_BONUS = 12;
 
-    // Bonus for a ROOK/QUEEN BATTERY: two (or more) friendly heavy pieces (rooks, or
+    // Bonus for a ROOK/QUEEN BATTERY: two (or more) friendly heavy pieces (rooks,
+    // or
     // a queen backing them up - "Alekhine's gun") stacked on the same file with no
-    // pawn between them. A battery's strength comes almost entirely from the file it
+    // pawn between them. A battery's strength comes almost entirely from the file
+    // it
     // controls, so the bonus is NOT a single flat number: it scales with how open
     // that file is for the owning side. On a fully open file a battery is heavy
-    // artillery; on a half-open file it leans on the enemy pawn; behind its own pawn
-    // it is passive and barely worth anything. Awarded per adjacent pair on the file
-    // (so a normal pair earns it once, three clear-stacked pieces twice). Stacks with
+    // artillery; on a half-open file it leans on the enemy pawn; behind its own
+    // pawn
+    // it is passive and barely worth anything. Awarded per adjacent pair on the
+    // file
+    // (so a normal pair earns it once, three clear-stacked pieces twice). Stacks
+    // with
     // {@link #rookFileScore}, which already rewards the open file per rook.
     private static final int ROOK_BATTERY_OPEN = 30; // doubled on a fully open file
     private static final int ROOK_BATTERY_HALF_OPEN = 18; // doubled on a half-open file (enemy pawn ahead)
@@ -100,7 +107,8 @@ public class MainEvaluation {
 
     // Penalty for a DOUBLED pawn: two (or more) friendly pawns stacked on the same
     // file. They cannot defend each other, get in each other's way, and the file is
-    // half-crippled. Charged per EXTRA pawn on the file (so a normal double costs it
+    // half-crippled. Charged per EXTRA pawn on the file (so a normal double costs
+    // it
     // once, a triple twice).
     private static final int DOUBLED_PAWN_PENALTY = 15;
 
@@ -207,81 +215,150 @@ public class MainEvaluation {
      * @return the position value in centipawns (positive = White is better)
      */
     public int evaluate(Cell[][] board, int ply) {
-        int phase = gamePhase(board); // PHASE_MAX = full board, 0 = bare endgame
-        int score = pieceRawMaterial(board, phase); // material; pawn value tapered by phase
-        score += pieceSquareScore(board, phase); // positional bonuses, king blended by phase
-        score += rookFileScore(board); // reward rooks on open / half-open files
-        score += rookBatteryScore(board); // reward doubled rooks on the same file
+        BoardScan scan = scan(board); // ONE pass: phase, per-file pawn data, king squares
+        int phase = scan.phase; // PHASE_MAX = full board, 0 = bare endgame
+        int score = materialAndSquareScore(board, phase); // material + piece-square, king blended by phase
+        score += rookFileScore(board, scan); // reward rooks on open / half-open files
+        score += rookBatteryScore(board, scan); // reward doubled rooks on the same file
         score += rookConnectedRankScore(board); // reward connected rooks on the same rank
-        score += pawnStructureScore(board); // penalise isolated pawns, reward connected ones
-        score += doubledPawnScore(board); // penalise doubled pawns on a file
-        score += passedPawnScore(board, phase); // reward passed pawns (push bonus grows toward the endgame)
+        score += pawnStructureScore(board, scan); // penalise isolated pawns, reward connected ones
+        score += doubledPawnScore(scan); // penalise doubled pawns on a file
+        score += passedPawnScore(board, scan); // reward passed pawns (push bonus grows toward the endgame)
         score += midGame.extras(board, phase, PHASE_MAX, ply); // castling + development + opening principles
         score += endGame.extras(board, phase); // mop-up gradient (only in a won endgame)
         return score;
     }
 
     /**
-     * Adds up the raw material on the board: every White piece counts as a plus
-     * and every Black piece as a minus, each scaled to centipawns. The kings cancel
-     * out (both sides always have exactly one), so they make no difference here.
-     *
-     * @param board the 8x8 grid of squares to score
-     * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame),
-     *              used to taper the pawn value between its mid and end worth
-     * @return the material balance in centipawns, from White's point of view
+     * The per-file and per-king facts the scoring terms share, gathered in a
+     * SINGLE pass over the board by {@link #scan} so no term has to rescan for
+     * them. Holding them here is what lets {@link #evaluate} walk the board far
+     * fewer times than calling each term in isolation would.
      */
-    public int pieceRawMaterial(Cell[][] board, int phase) {
-        int score = 0; // running total, from White's perspective
-        for (int x = 0; x < 8; x++) { // walk every file (column)
-            for (int y = 0; y < 8; y++) { // walk every rank (row)
-                Piece piece = board[x][y].getContain(); // the piece on this square, or null if empty
-                if (piece == null) { // empty square contributes nothing
-                    continue; // skip to the next square
-                }
-                int value = materialValue(piece, phase); // this piece's worth in centipawns
-                if (piece.getSide() == Faction.WHITE) { // a White piece helps White
-                    score += value; // so add its value
-                } else { // a Black piece helps Black
-                    score -= value; // so subtract its value
-                }
-            }
+    private static final class BoardScan {
+        final int phase; // game phase, clamped to PHASE_MAX (full board = PHASE_MAX)
+        final int[] whitePawns; // how many White pawns stand on each file
+        final int[] blackPawns; // how many Black pawns stand on each file
+        final int[] whiteMinRank; // lowest-ranked White pawn per file (8 = none)
+        final int[] blackMaxRank; // highest-ranked Black pawn per file (-1 = none)
+        final int whiteKingX, whiteKingY; // White king square
+        final int blackKingX, blackKingY; // Black king square
+
+        BoardScan(int phase, int[] whitePawns, int[] blackPawns, int[] whiteMinRank, int[] blackMaxRank,
+                int whiteKingX, int whiteKingY, int blackKingX, int blackKingY) {
+            this.phase = phase;
+            this.whitePawns = whitePawns;
+            this.blackPawns = blackPawns;
+            this.whiteMinRank = whiteMinRank;
+            this.blackMaxRank = blackMaxRank;
+            this.whiteKingX = whiteKingX;
+            this.whiteKingY = whiteKingY;
+            this.blackKingX = blackKingX;
+            this.blackKingY = blackKingY;
         }
-        return score; // total material balance (positive = White ahead)
     }
 
     /**
-     * This piece's material worth in centipawns. Everything uses its plain
-     * {@link Piece#getValue} times {@link #CENTIPAWNS}, except two pieces: the bishop
-     * is nudged to {@link #BISHOP_VALUE} (312) so the engine values it just above a
-     * knight and won't trade the two off for free, and the PAWN is tapered between
-     * {@link #PAWN_VALUE_MID} (70 cp in the middlegame) and {@link #PAWN_VALUE_END}
-     * (120 cp in a bare endgame) by the game phase.
+     * Walks the board ONCE and gathers everything the scoring terms used to
+     * recompute separately: the game phase, each side's pawn count per file, the
+     * extreme pawn rank per file (for passed-pawn tests) and the king squares.
+     * This replaces the standalone scans inside the phase, material, rook-file,
+     * battery, doubled-pawn, pawn-structure and passed-pawn terms.
+     *
+     * @param board the 8x8 grid of squares to inspect
+     * @return the shared facts, ready to hand to each term
+     */
+    private BoardScan scan(Cell[][] board) {
+        int phase = 0; // running total of phase weights (same scheme as gamePhase)
+        int[] whitePawns = new int[8];
+        int[] blackPawns = new int[8];
+        int[] whiteMinRank = { 8, 8, 8, 8, 8, 8, 8, 8 }; // 8 = no White pawn on this file
+        int[] blackMaxRank = { -1, -1, -1, -1, -1, -1, -1, -1 }; // -1 = no Black pawn on this file
+        int whiteKingX = 0, whiteKingY = 0, blackKingX = 0, blackKingY = 0;
+        for (int x = 0; x < 8; x++) { // every file
+            for (int y = 0; y < 8; y++) { // every rank
+                Piece piece = board[x][y].getContain(); // piece on this square, if any
+                if (piece == null) {
+                    continue; // empty square contributes nothing
+                }
+                if (piece instanceof Pawn) {
+                    if (piece.getSide() == Faction.WHITE) {
+                        whitePawns[x]++;
+                        if (y < whiteMinRank[x]) {
+                            whiteMinRank[x] = y;
+                        }
+                    } else {
+                        blackPawns[x]++;
+                        if (y > blackMaxRank[x]) {
+                            blackMaxRank[x] = y;
+                        }
+                    }
+                } else if (piece instanceof Knight || piece instanceof Bishop) {
+                    phase += 1; // a minor piece is worth 1 phase point
+                } else if (piece instanceof Rook) {
+                    phase += 2; // a rook is worth 2
+                } else if (piece instanceof Queen) {
+                    phase += 4; // a queen is worth 4
+                } else if (piece instanceof King) {
+                    if (piece.getSide() == Faction.WHITE) {
+                        whiteKingX = x;
+                        whiteKingY = y;
+                    } else {
+                        blackKingX = x;
+                        blackKingY = y;
+                    }
+                }
+            }
+        }
+        phase = Math.min(phase, PHASE_MAX); // promotion can never push us past a full board
+        return new BoardScan(phase, whitePawns, blackPawns, whiteMinRank, blackMaxRank,
+                whiteKingX, whiteKingY, blackKingX, blackKingY);
+    }
+
+    /**
+     * This piece's material worth in centipawns. Each pawn/knight/bishop/rook/queen
+     * is TAPERED between a middlegame value (at PHASE_MAX) and an endgame value (at
+     * phase 0) - e.g. the pawn blends {@link #PAWN_VALUE_MID} and
+     * {@link #PAWN_VALUE_END}, the bishop {@link #BISHOP_VALUE_MID} and
+     * {@link #BISHOP_VALUE_END} (kept a touch above the knight so the engine won't
+     * swap the two off for free). Anything else - the king - keeps its plain
+     * {@link Piece#getValue} times {@link #CENTIPAWNS}; the two kings cancel out, so
+     * their value never affects the score.
      *
      * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame)
      */
     private int materialValue(Piece piece, int phase) {
-        if (piece instanceof Bishop) {
-            return BISHOP_VALUE; // a touch more than a knight's 300
-        }
         if (piece instanceof Pawn) {
             // Blend the two pawn worths by phase: PAWN_VALUE_MID at PHASE_MAX,
             // PAWN_VALUE_END at 0, smoothly in between (same taper as the king table).
             return (PAWN_VALUE_MID * phase + PAWN_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
+        } else if (piece instanceof Knight) {
+            return (KNIGHT_VALUE_MID * phase + KNIGHT_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
+        } else if (piece instanceof Bishop) {
+            return (BISHOP_VALUE_MID * phase + BISHOP_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
+        } else if (piece instanceof Rook) {
+            return (ROOK_VALUE_MID * phase + ROOK_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
+        } else if (piece instanceof Queen) {
+            return (QUEEN_VALUE_MID * phase + QUEEN_VALUE_END * (PHASE_MAX - phase)) / PHASE_MAX;
         }
+
         return piece.getValue() * CENTIPAWNS; // every other piece keeps its plain value
     }
 
     /**
-     * Sums every piece's piece-square bonus. Non-king pieces read their own fixed
-     * table; the king blends its midgame and endgame tables by the game phase, so
-     * it hides on the back rank early and marches to the centre in the endgame.
+     * Sums material AND every piece's piece-square bonus in a SINGLE pass (the two
+     * used to be separate full-board walks). Material is each piece's worth in
+     * centipawns, the pawn and the minor/major pieces tapered by phase; the
+     * piece-square bonus comes from each piece's fixed table, except the king,
+     * whose midgame and endgame tables are blended by the game phase so it hides on
+     * the back rank early and marches to the centre in the endgame.
      *
      * @param board the 8x8 grid of squares to score
      * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame)
-     * @return the positional bonus total in centipawns, from White's point of view
+     * @return material plus positional bonus, in centipawns, from White's point of
+     *         view
      */
-    private int pieceSquareScore(Cell[][] board, int phase) {
+    private int materialAndSquareScore(Cell[][] board, int phase) {
         int score = 0; // running total, from White's perspective
         for (int x = 0; x < 8; x++) { // every file
             for (int y = 0; y < 8; y++) { // every rank
@@ -289,7 +366,9 @@ public class MainEvaluation {
                 if (piece == null) { // empty square contributes nothing
                     continue;
                 }
-                int rank = (piece.getSide() == Faction.WHITE) ? y : 7 - y; // flip the rank for Black
+                boolean white = piece.getSide() == Faction.WHITE; // whose piece this is
+                int value = materialValue(piece, phase); // material worth in centipawns
+                int rank = white ? y : 7 - y; // flip the rank for Black
                 int bonus; // this piece's positional bonus, in White's orientation
                 if (piece instanceof King) { // the king's value depends on the game phase
                     int mid = midGame.kingSquareBonus(rank, x); // value if it were still a midgame
@@ -300,14 +379,14 @@ public class MainEvaluation {
                 } else {
                     bonus = nonKingSquareBonus(piece, rank, x); // a fixed table per piece type
                 }
-                if (piece.getSide() == Faction.WHITE) { // a good square helps the owner
-                    score += bonus; // add it for White
+                if (white) { // material and a good square both help the owner
+                    score += value + bonus; // add for White
                 } else {
-                    score -= bonus; // subtract it for Black
+                    score -= value + bonus; // subtract for Black
                 }
             }
         }
-        return score; // total positional bonus
+        return score; // total material + positional bonus
     }
 
     /**
@@ -341,23 +420,12 @@ public class MainEvaluation {
      * pawn earns nothing here.
      *
      * @param board the 8x8 grid of squares to inspect
+     * @param scan  the shared one-pass board scan (per-file pawn counts)
      * @return the rook-file bonus total in centipawns, from White's point of view
      */
-    private int rookFileScore(Cell[][] board) {
-        int[] whitePawns = new int[8]; // how many White pawns stand on each file (column)
-        int[] blackPawns = new int[8]; // how many Black pawns stand on each file
-        for (int x = 0; x < 8; x++) { // every file
-            for (int y = 0; y < 8; y++) { // every rank
-                Piece piece = board[x][y].getContain(); // piece on this square, if any
-                if (piece instanceof Pawn) { // only pawns decide whether a file is open
-                    if (piece.getSide() == Faction.WHITE) {
-                        whitePawns[x]++;
-                    } else {
-                        blackPawns[x]++;
-                    }
-                }
-            }
-        }
+    private int rookFileScore(Cell[][] board, BoardScan scan) {
+        int[] whitePawns = scan.whitePawns; // how many White pawns stand on each file (column)
+        int[] blackPawns = scan.blackPawns; // how many Black pawns stand on each file
 
         int score = 0; // running total, from White's perspective
         for (int x = 0; x < 8; x++) { // every file
@@ -391,35 +459,30 @@ public class MainEvaluation {
 
     /**
      * Rewards ROOK/QUEEN BATTERIES: two or more friendly heavy pieces (rooks, or a
-     * queen backing them) stacked on the same file with NO PAWN standing between them.
-     * A battery defends itself and piles pressure down the file, but only if the file
-     * between the pieces is not blocked by a pawn - a piece in between is fine (it can
-     * step aside), a pawn is not. The bonus is scaled by how open the file is for the
+     * queen backing them) stacked on the same file with NO PAWN standing between
+     * them.
+     * A battery defends itself and piles pressure down the file, but only if the
+     * file
+     * between the pieces is not blocked by a pawn - a piece in between is fine (it
+     * can
+     * step aside), a pawn is not. The bonus is scaled by how open the file is for
+     * the
      * owning side ({@link #ROOK_BATTERY_OPEN} / {@link #ROOK_BATTERY_HALF_OPEN} /
      * {@link #ROOK_BATTERY_CLOSED}), because that is what actually makes a battery
      * strong or pointless. Awarded per adjacent pair on the file (so a normal pair
-     * earns it once, three clear-stacked pieces twice). Returned from White's point of
-     * view; this stacks with {@link #rookFileScore}, which rewards the open file per
+     * earns it once, three clear-stacked pieces twice). Returned from White's point
+     * of
+     * view; this stacks with {@link #rookFileScore}, which rewards the open file
+     * per
      * rook.
      *
      * @param board the 8x8 grid of squares to inspect
+     * @param scan  the shared one-pass board scan (per-file pawn counts)
      * @return the battery bonus total in centipawns, from White's point of view
      */
-    private int rookBatteryScore(Cell[][] board) {
-        int[] whitePawns = new int[8]; // how many White pawns stand on each file
-        int[] blackPawns = new int[8]; // how many Black pawns stand on each file
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                Piece piece = board[x][y].getContain();
-                if (piece instanceof Pawn) {
-                    if (piece.getSide() == Faction.WHITE) {
-                        whitePawns[x]++;
-                    } else {
-                        blackPawns[x]++;
-                    }
-                }
-            }
-        }
+    private int rookBatteryScore(Cell[][] board, BoardScan scan) {
+        int[] whitePawns = scan.whitePawns; // how many White pawns stand on each file
+        int[] blackPawns = scan.blackPawns; // how many Black pawns stand on each file
 
         int score = 0; // from White's perspective
         score += fileBatteryBonus(board, Faction.WHITE, whitePawns, blackPawns); // White's batteries help White
@@ -428,14 +491,19 @@ public class MainEvaluation {
     }
 
     /**
-     * Sums one side's battery bonuses: for every file, pairs each friendly heavy piece
-     * (rook or queen) with the next one above it and, when no pawn sits between them,
+     * Sums one side's battery bonuses: for every file, pairs each friendly heavy
+     * piece
+     * (rook or queen) with the next one above it and, when no pawn sits between
+     * them,
      * awards a bonus scaled by how open the file is for this side - full value on a
      * fully open file, less on a half-open one, almost nothing behind our own pawn.
-     * Always returns a non-negative total (the caller applies the sign for the side).
+     * Always returns a non-negative total (the caller applies the sign for the
+     * side).
      *
-     * @param whitePawns White pawns per file, blackPawns Black pawns per file (shared
-     *                   with {@link #rookBatteryScore} so we do not rescan the board)
+     * @param whitePawns White pawns per file, blackPawns Black pawns per file
+     *                   (shared
+     *                   with {@link #rookBatteryScore} so we do not rescan the
+     *                   board)
      */
     private int fileBatteryBonus(Cell[][] board, Faction side, int[] whitePawns, int[] blackPawns) {
         boolean white = side == Faction.WHITE;
@@ -463,12 +531,13 @@ public class MainEvaluation {
 
     /**
      * True if no pawn (of either colour) stands on file {@code x} strictly between
-     * ranks {@code y1} and {@code y2}. A pawn blocks the file and breaks the battery;
+     * ranks {@code y1} and {@code y2}. A pawn blocks the file and breaks the
+     * battery;
      * any other piece is allowed, since it can move aside to clear the rooks' line.
      */
     private boolean noPawnBetween(Cell[][] board, int x, int y1, int y2) {
         int lo = Math.min(y1, y2) + 1; // first square strictly between the rooks
-        int hi = Math.max(y1, y2);     // one past the last in-between square
+        int hi = Math.max(y1, y2); // one past the last in-between square
         for (int y = lo; y < hi; y++) {
             if (board[x][y].getContain() instanceof Pawn) { // a pawn in the way
                 return false;
@@ -478,14 +547,18 @@ public class MainEvaluation {
     }
 
     /**
-     * Rewards CONNECTED ROOKS: two friendly rooks on the same RANK (row) with no pawn
-     * between them, so they protect each other along the rank. We pair each rook with
+     * Rewards CONNECTED ROOKS: two friendly rooks on the same RANK (row) with no
+     * pawn
+     * between them, so they protect each other along the rank. We pair each rook
+     * with
      * the next friendly rook to its right on the same rank and award
-     * {@link #ROOK_CONNECTED_RANK_BONUS} when the squares between hold no pawn (a piece
+     * {@link #ROOK_CONNECTED_RANK_BONUS} when the squares between hold no pawn (a
+     * piece
      * is allowed - it can step aside). Returned from White's point of view.
      *
      * @param board the 8x8 grid of squares to inspect
-     * @return the connected-rooks bonus total in centipawns, from White's point of view
+     * @return the connected-rooks bonus total in centipawns, from White's point of
+     *         view
      */
     private int rookConnectedRankScore(Cell[][] board) {
         int score = 0; // from White's perspective
@@ -519,12 +592,13 @@ public class MainEvaluation {
 
     /**
      * True if no pawn (of either colour) stands on rank {@code y} strictly between
-     * files {@code x1} and {@code x2}. Mirrors {@link #noPawnBetween} along a rank: a
+     * files {@code x1} and {@code x2}. Mirrors {@link #noPawnBetween} along a rank:
+     * a
      * pawn breaks the connection, any other piece is allowed.
      */
     private boolean noPawnBetweenOnRank(Cell[][] board, int y, int x1, int x2) {
         int lo = Math.min(x1, x2) + 1; // first square strictly between the rooks
-        int hi = Math.max(x1, x2);     // one past the last in-between square
+        int hi = Math.max(x1, x2); // one past the last in-between square
         for (int x = lo; x < hi; x++) {
             if (board[x][y].getContain() instanceof Pawn) { // a pawn in the way
                 return false;
@@ -534,29 +608,20 @@ public class MainEvaluation {
     }
 
     /**
-     * Penalises DOUBLED PAWNS: two or more friendly pawns on the same file. We count
+     * Penalises DOUBLED PAWNS: two or more friendly pawns on the same file. We
+     * count
      * each side's pawns per file and charge {@link #DOUBLED_PAWN_PENALTY} per EXTRA
-     * pawn (so a normal double costs it once, a triple twice). Returned from White's
+     * pawn (so a normal double costs it once, a triple twice). Returned from
+     * White's
      * point of view, and phase-independent - doubled pawns are a weakness all game.
      *
-     * @param board the 8x8 grid of squares to inspect
-     * @return the doubled-pawn penalty total in centipawns, from White's point of view
+     * @param scan the shared one-pass board scan (per-file pawn counts)
+     * @return the doubled-pawn penalty total in centipawns, from White's point of
+     *         view
      */
-    private int doubledPawnScore(Cell[][] board) {
-        int[] whitePawns = new int[8]; // White pawns on each file
-        int[] blackPawns = new int[8]; // Black pawns on each file
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                Piece piece = board[x][y].getContain();
-                if (piece instanceof Pawn) {
-                    if (piece.getSide() == Faction.WHITE) {
-                        whitePawns[x]++;
-                    } else {
-                        blackPawns[x]++;
-                    }
-                }
-            }
-        }
+    private int doubledPawnScore(BoardScan scan) {
+        int[] whitePawns = scan.whitePawns; // White pawns on each file
+        int[] blackPawns = scan.blackPawns; // Black pawns on each file
 
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {
@@ -586,23 +651,12 @@ public class MainEvaluation {
      * neighbour on an adjacent file, so it is never isolated.
      *
      * @param board the 8x8 grid of squares to inspect
+     * @param scan  the shared one-pass board scan (per-file pawn counts)
      * @return the pawn-structure total in centipawns, from White's point of view
      */
-    private int pawnStructureScore(Cell[][] board) {
-        boolean[] whiteOnFile = new boolean[8]; // does White have a pawn anywhere on this file?
-        boolean[] blackOnFile = new boolean[8]; // does Black have a pawn anywhere on this file?
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                Piece piece = board[x][y].getContain();
-                if (piece instanceof Pawn) {
-                    if (piece.getSide() == Faction.WHITE) {
-                        whiteOnFile[x] = true;
-                    } else {
-                        blackOnFile[x] = true;
-                    }
-                }
-            }
-        }
+    private int pawnStructureScore(Cell[][] board, BoardScan scan) {
+        int[] whitePawns = scan.whitePawns; // White pawns per file (0 = none on this file)
+        int[] blackPawns = scan.blackPawns; // Black pawns per file
 
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {
@@ -613,10 +667,10 @@ public class MainEvaluation {
                 }
                 Faction side = piece.getSide();
                 boolean white = side == Faction.WHITE;
-                boolean[] ownFiles = white ? whiteOnFile : blackOnFile; // our own pawns, by file
+                int[] ownPawns = white ? whitePawns : blackPawns; // our own pawn counts, by file
 
                 // Isolated: no friendly pawn on either neighbouring file.
-                boolean hasNeighbourFile = (x > 0 && ownFiles[x - 1]) || (x < 7 && ownFiles[x + 1]);
+                boolean hasNeighbourFile = (x > 0 && ownPawns[x - 1] > 0) || (x < 7 && ownPawns[x + 1] > 0);
 
                 // Connected: a friendly pawn on an adjacent file, level with us (phalanx)
                 // or one rank behind us defending (white defends from y-1, black from y+1).
@@ -669,40 +723,21 @@ public class MainEvaluation {
      * draw in a won ending.
      *
      * @param board the 8x8 grid of squares to inspect
-     * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame)
+     * @param scan  the shared one-pass board scan (per-file pawn extremes, kings,
+     *              phase)
      * @return the passed-pawn bonus total in centipawns, from White's point of view
      */
-    private int passedPawnScore(Cell[][] board, int phase) {
+    private int passedPawnScore(Cell[][] board, BoardScan scan) {
         // For each file, the enemy pawn we must clear to count as "passed": a White
         // pawn is blocked by Black pawns AHEAD (a higher rank), a Black pawn by White
-        // pawns ahead (a lower rank). So track the highest Black pawn and the lowest
-        // White pawn on each file. Also remember the kings, for the escort term.
-        int[] blackMaxRank = { -1, -1, -1, -1, -1, -1, -1, -1 }; // -1 = no Black pawn on this file
-        int[] whiteMinRank = { 8, 8, 8, 8, 8, 8, 8, 8 }; // 8 = no White pawn on this file
-        int whiteKingX = 0, whiteKingY = 0, blackKingX = 0, blackKingY = 0; // king squares
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                Piece piece = board[x][y].getContain();
-                if (piece instanceof Pawn) {
-                    if (piece.getSide() == Faction.WHITE) {
-                        if (y < whiteMinRank[x])
-                            whiteMinRank[x] = y;
-                    } else {
-                        if (y > blackMaxRank[x])
-                            blackMaxRank[x] = y;
-                    }
-                } else if (piece instanceof King) {
-                    if (piece.getSide() == Faction.WHITE) {
-                        whiteKingX = x;
-                        whiteKingY = y;
-                    } else {
-                        blackKingX = x;
-                        blackKingY = y;
-                    }
-                }
-            }
-        }
+        // pawns ahead (a lower rank). The highest Black pawn and lowest White pawn per
+        // file, plus the king squares for the escort term, all come from the shared scan.
+        int[] blackMaxRank = scan.blackMaxRank; // -1 = no Black pawn on this file
+        int[] whiteMinRank = scan.whiteMinRank; // 8 = no White pawn on this file
+        int whiteKingX = scan.whiteKingX, whiteKingY = scan.whiteKingY; // White king square
+        int blackKingX = scan.blackKingX, blackKingY = scan.blackKingY; // Black king square
 
+        int phase = scan.phase; // PHASE_MAX = midgame, 0 = bare endgame
         int endgameWeight = PHASE_MAX - phase; // 0 in the opening, PHASE_MAX in a bare endgame
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {

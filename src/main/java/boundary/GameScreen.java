@@ -55,7 +55,7 @@ public class GameScreen extends Screen {
     private GameController gameController;
 
     // engine opponent (only used in "Play vs Engine" mode)
-    private static final int ENGINE_DEPTH = 5; // how many half-moves the engine looks ahead
+    private static final int ENGINE_DEPTH = 6; // how many half-moves the engine looks ahead
     private final boolean vsEngine; // true when the human plays against the engine
     private Faction engineSide = Faction.BLACK; // the side the engine plays; flips with the board in engine mode
     private ChessEngine engine; // created on game start when vsEngine is true

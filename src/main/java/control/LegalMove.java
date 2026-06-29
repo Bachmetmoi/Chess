@@ -23,26 +23,41 @@ public class LegalMove {
     }
 
     // methods
-    private boolean kingSafe(Cell[][] board, Piece sameSidePiece) {
-        Faction side = sameSidePiece.getSide();
 
-        // find king
-        int kingX = -1, kingY = -1;
+    /**
+     * Locates {@code side}'s king on {@code board}, returned as {@code {x, y}} (or
+     * {@code {-1, -1}} if there is none, which should not happen in a real game).
+     */
+    private int[] findKing(Cell[][] board, Faction side) {
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 8; j++) {
                 Piece p = board[i][j].getContain();
                 if (p instanceof King && p.getSide() == side) {
-                    kingX = i;
-                    kingY = j;
+                    return new int[] { i, j };
                 }
             }
         }
-        if (kingX == -1) {
+        return new int[] { -1, -1 };
+    }
+
+    /**
+     * Public helper for the search: the square of {@code side}'s king on the current
+     * board, as {@code {x, y}}. The engine reads this ONCE per position and then
+     * reuses it across every move it checks (see {@link #isLegalWithKing}), instead
+     * of rescanning the board for the king on every single move.
+     */
+    public int[] findKing(Faction side) {
+        return findKing(chessBoard.getBoard(), side);
+    }
+
+    private boolean kingSafe(Cell[][] board, Piece sameSidePiece) {
+        Faction side = sameSidePiece.getSide();
+        int[] king = findKing(board, side);
+        if (king[0] == -1) {
             return true; // no king on the board (shouldn't happen) -> nothing to attack
         }
-
         Faction enemy = (side == Faction.WHITE) ? Faction.BLACK : Faction.WHITE;
-        return !isSquareAttacked(board, kingX, kingY, enemy);
+        return !isSquareAttacked(board, king[0], king[1], enemy);
     }
 
     /**
@@ -145,49 +160,61 @@ public class LegalMove {
     }
 
     public boolean isLegal(Move move) {
+        // Stand-alone entry (e.g. validating a human move): find the king ourselves,
+        // then run the shared check. The search uses isLegalWithKing directly so it
+        // can find the king once per position rather than once per move.
+        Cell[][] board = chessBoard.getBoard();
+        Piece movingPiece = board[move.getStartXPos()][move.getStartYPos()].getContain();
+        int[] king = findKing(board, movingPiece.getSide());
+        return isLegalWithKing(move, king[0], king[1]);
+    }
+
+    /**
+     * The body of {@link #isLegal}, but told where the side-to-move's king stands
+     * ({@code kingX}, {@code kingY}) on the current board so it need not rescan for
+     * it. For a normal move the king square is unchanged (or, if the king itself
+     * moves, its destination); castling keeps the original pass-through-check logic.
+     * The board is mutated to test the move and restored before returning, so the
+     * position is left exactly as it was found.
+     */
+    public boolean isLegalWithKing(Move move, int kingX, int kingY) {
         int startX = move.getStartXPos();
         int startY = move.getStartYPos();
         int endX = move.getEndXPos();
         int endY = move.getEndYPos();
-        int direction = (endX > startX) ? 1 : -1; // castling short/long
         Cell[][] board = chessBoard.getBoard();
         Piece movingPiece = board[startX][startY].getContain();
         Piece capturedPiece = board[endX][endY].getContain();
-        boolean legal = true;
 
-        // castling check
+        // castling check: the king must be safe where it stands, and on the square it
+        // steps through. (Its landing square is checked by the normal-move test below.)
         if (move instanceof Castling) {
+            int direction = (endX > startX) ? 1 : -1; // short/long
             if (!kingSafe(board, movingPiece)) {
                 return false;
             }
-
-            // If King pass through check
             board[startX][startY].setContain(null);
             board[startX + direction][startY].setContain(movingPiece);
-
-            if (!(kingSafe(board, movingPiece))) {
-                legal = false;
-            }
-
-            // undo
+            boolean passSafe = kingSafe(board, movingPiece);
             board[startX][startY].setContain(movingPiece);
             board[startX + direction][startY].setContain(null);
-
-            if (!legal) {
+            if (!passSafe) {
                 return false;
             }
         }
-        // normal move
-        // try to move
+
+        // normal move: play it, see whether our king is attacked, then take it back
         board[endX][endY].setContain(movingPiece);
         board[startX][startY].setContain(null);
 
-        // check if King in check
-        if (!kingSafe(board, movingPiece)) {
-            legal = false;
-        }
+        // If the king itself moved, it now stands on the destination; otherwise it is
+        // wherever the caller said it was.
+        boolean movingKing = movingPiece instanceof King;
+        int kx = movingKing ? endX : kingX;
+        int ky = movingKing ? endY : kingY;
+        Faction enemy = (movingPiece.getSide() == Faction.WHITE) ? Faction.BLACK : Faction.WHITE;
+        boolean legal = !isSquareAttacked(board, kx, ky, enemy);
 
-        // undo move
         board[startX][startY].setContain(movingPiece);
         board[endX][endY].setContain(capturedPiece);
 
