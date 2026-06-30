@@ -34,14 +34,11 @@ public class MainEvaluation {
     // whole piece. Multiplying each Piece's value by this keeps that convention.
     private static final int CENTIPAWNS = 100;
 
-    // A pawn's material worth is TAPERED by game phase instead of a flat 100 cp.
-    // In the middlegame a pawn is the least of the engine's worries - piece
-    // activity
-    // and king safety dominate - so it is valued below par at 70 cp. As the board
-    // empties and pawns become promotion candidates, each one grows in importance,
-    // so in a bare endgame it is worth 120 cp. We blend between the two by phase,
-    // exactly the way the king's piece-square table is blended (see
-    // pieceSquareScore).
+    // Each piece's material worth is TAPERED by game phase between a middlegame and
+    // an endgame value, blended exactly the way the king's piece-square table is (see
+    // materialValue / taper). The numbers are Stockfish's own material values: a pawn
+    // grows from 124 cp in the middlegame to 206 cp in a bare endgame (it becomes a
+    // promotion candidate), and likewise for every other piece below.
     private static final int PAWN_VALUE_MID = 124;
     private static final int PAWN_VALUE_END = 206;
     private static final int KNIGHT_VALUE_MID = 781;
@@ -60,13 +57,16 @@ public class MainEvaluation {
     private static final int PHASE_MAX = 24;
 
     // Bonus (centipawns) for a rook standing on a file with no pawns at all: an
-    // "open file" is a highway for the rook, so this is a meaningful nudge.
-    private static final int ROOK_OPEN_FILE_BONUS = 25;
+    // "open file" is a highway for the rook. Tapered by phase like material, using
+    // Stockfish's values (rook_on_file open: mg 48, eg 29).
+    private static final int ROOK_OPEN_FILE_MG = 48;
+    private static final int ROOK_OPEN_FILE_EG = 29;
 
     // Bonus for a rook on a "half-open" file: no friendly pawns block it, but the
     // enemy still has a pawn there. Useful (the rook pressures that pawn) but worth
-    // less than a fully open file, so about half the bonus.
-    private static final int ROOK_HALF_OPEN_FILE_BONUS = 12;
+    // less than a fully open file. Stockfish rook_on_file half-open: mg 19, eg 7.
+    private static final int ROOK_HALF_OPEN_FILE_MG = 19;
+    private static final int ROOK_HALF_OPEN_FILE_EG = 7;
 
     // Bonus for a ROOK/QUEEN BATTERY: two (or more) friendly heavy pieces (rooks,
     // or
@@ -95,9 +95,10 @@ public class MainEvaluation {
 
     // ---- Pawn structure ----
     // Penalty for an ISOLATED pawn: one with no friendly pawn on either adjacent
-    // file, so no pawn can ever defend it. It is a long-term weakness (a target the
-    // enemy can pile up on), hence a small standing penalty in every phase.
-    private static final int ISOLATED_PAWN_PENALTY = 12;
+    // file, so no pawn can ever defend it. A long-term weakness that bites harder in
+    // the endgame, so it is tapered by phase. Stockfish pawns term: mg 5, eg 15.
+    private static final int ISOLATED_PAWN_MG = 5;
+    private static final int ISOLATED_PAWN_EG = 15;
 
     // Bonus for a CONNECTED pawn: one supported by a friendly pawn on an adjacent
     // file right beside it - either side by side (a phalanx) or diagonally behind
@@ -108,9 +109,10 @@ public class MainEvaluation {
     // Penalty for a DOUBLED pawn: two (or more) friendly pawns stacked on the same
     // file. They cannot defend each other, get in each other's way, and the file is
     // half-crippled. Charged per EXTRA pawn on the file (so a normal double costs
-    // it
-    // once, a triple twice).
-    private static final int DOUBLED_PAWN_PENALTY = 15;
+    // it once, a triple twice). Far worse in the endgame, so tapered by phase.
+    // Stockfish pawns term: mg 11, eg 56.
+    private static final int DOUBLED_PAWN_MG = 11;
+    private static final int DOUBLED_PAWN_EG = 56;
 
     // ---- Passed-pawn bonuses (the key to converting a won endgame) ----
     // A pawn is "passed" when no enemy pawn can stop it: none on its own file or
@@ -121,8 +123,11 @@ public class MainEvaluation {
     // is added on top and scaled up as the board empties, because a passer is far
     // likelier to actually queen once few pieces remain. This is what gives the
     // search a gradient to MARCH a passer home instead of shuffling into a draw.
-    private static final int[] PASSED_PAWN_BASE = { 0, 5, 10, 20, 35, 60, 90, 0 };
-    private static final int[] PASSED_PAWN_ENDGAME = { 0, 5, 15, 30, 55, 90, 140, 0 };
+    // Indexed by RELATIVE rank (1 = just off the start ... 6 = one step from
+    // promoting). The middlegame and endgame tables are blended by phase, so a
+    // passer is worth more as the board empties. Stockfish passed_rank bonuses.
+    private static final int[] PASSED_PAWN_MG = { 0, 10, 17, 15, 62, 168, 276, 0 };
+    private static final int[] PASSED_PAWN_EG = { 0, 28, 33, 41, 72, 177, 260, 0 };
 
     // Centipawns per square of king "escort" advantage on a passed pawn: if the
     // pushing side's king stands closer to the pawn than the defending king, the
@@ -346,6 +351,20 @@ public class MainEvaluation {
     }
 
     /**
+     * Blends a middlegame and an endgame value by the current game phase: the
+     * midgame value at {@link #PHASE_MAX} (full board), the endgame value at 0 (bare
+     * endgame), smoothly in between. The same taper {@link #materialValue} uses, so
+     * positional terms that Stockfish gives as separate mg/eg numbers can follow it.
+     *
+     * @param mg    the middlegame value
+     * @param eg    the endgame value
+     * @param phase the current game phase (PHASE_MAX = midgame, 0 = bare endgame)
+     */
+    private int taper(int mg, int eg, int phase) {
+        return (mg * phase + eg * (PHASE_MAX - phase)) / PHASE_MAX;
+    }
+
+    /**
      * Sums material AND every piece's piece-square bonus in a SINGLE pass (the two
      * used to be separate full-board walks). Material is each piece's worth in
      * centipawns, the pawn and the minor/major pieces tapered by phase; the
@@ -442,9 +461,9 @@ public class MainEvaluation {
                 if (ownPawnOnFile) {
                     bonus = 0; // blocked by our own pawn: no open-file value
                 } else if (enemyPawnOnFile) {
-                    bonus = ROOK_HALF_OPEN_FILE_BONUS; // half-open: only the enemy pawn is in the way
+                    bonus = taper(ROOK_HALF_OPEN_FILE_MG, ROOK_HALF_OPEN_FILE_EG, scan.phase); // half-open
                 } else {
-                    bonus = ROOK_OPEN_FILE_BONUS; // fully open file
+                    bonus = taper(ROOK_OPEN_FILE_MG, ROOK_OPEN_FILE_EG, scan.phase); // fully open file
                 }
 
                 if (white) { // a good file helps the owner
@@ -610,10 +629,10 @@ public class MainEvaluation {
     /**
      * Penalises DOUBLED PAWNS: two or more friendly pawns on the same file. We
      * count
-     * each side's pawns per file and charge {@link #DOUBLED_PAWN_PENALTY} per EXTRA
-     * pawn (so a normal double costs it once, a triple twice). Returned from
-     * White's
-     * point of view, and phase-independent - doubled pawns are a weakness all game.
+     * each side's pawns per file and charge the (phase-tapered) doubled-pawn penalty
+     * per EXTRA pawn (so a normal double costs it once, a triple twice). Returned from
+     * White's point of view; the penalty grows toward the endgame, where a crippled
+     * file matters most.
      *
      * @param scan the shared one-pass board scan (per-file pawn counts)
      * @return the doubled-pawn penalty total in centipawns, from White's point of
@@ -623,13 +642,14 @@ public class MainEvaluation {
         int[] whitePawns = scan.whitePawns; // White pawns on each file
         int[] blackPawns = scan.blackPawns; // Black pawns on each file
 
+        int penalty = taper(DOUBLED_PAWN_MG, DOUBLED_PAWN_EG, scan.phase); // worse as the board empties
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {
             if (whitePawns[x] >= 2) { // White stacked pawns on this file
-                score -= (whitePawns[x] - 1) * DOUBLED_PAWN_PENALTY; // a White weakness hurts White
+                score -= (whitePawns[x] - 1) * penalty; // a White weakness hurts White
             }
             if (blackPawns[x] >= 2) { // Black stacked pawns on this file
-                score += (blackPawns[x] - 1) * DOUBLED_PAWN_PENALTY; // a Black weakness helps White
+                score += (blackPawns[x] - 1) * penalty; // a Black weakness helps White
             }
         }
         return score; // total doubled-pawn penalty
@@ -658,6 +678,7 @@ public class MainEvaluation {
         int[] whitePawns = scan.whitePawns; // White pawns per file (0 = none on this file)
         int[] blackPawns = scan.blackPawns; // Black pawns per file
 
+        int isolatedPenalty = taper(ISOLATED_PAWN_MG, ISOLATED_PAWN_EG, scan.phase); // worse as the board empties
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
@@ -682,7 +703,7 @@ public class MainEvaluation {
 
                 int bonus = 0; // this pawn's structure value, "good for the owner"
                 if (!hasNeighbourFile) {
-                    bonus -= ISOLATED_PAWN_PENALTY; // no friend can ever defend it
+                    bonus -= isolatedPenalty; // no friend can ever defend it
                 }
                 if (connected) {
                     bonus += CONNECTED_PAWN_BONUS; // supported by a neighbour
@@ -738,7 +759,6 @@ public class MainEvaluation {
         int blackKingX = scan.blackKingX, blackKingY = scan.blackKingY; // Black king square
 
         int phase = scan.phase; // PHASE_MAX = midgame, 0 = bare endgame
-        int endgameWeight = PHASE_MAX - phase; // 0 in the opening, PHASE_MAX in a bare endgame
         int score = 0; // from White's perspective
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
@@ -752,16 +772,19 @@ public class MainEvaluation {
                 }
 
                 int relativeRank = white ? y : 7 - y; // how far advanced, from the owner's side
-                int bonus = PASSED_PAWN_BASE[relativeRank]; // the always-on push bonus
 
-                // Endgame extras: a bigger push bonus plus a king-escort term, both
-                // fading in as material comes off the board.
+                // The king-escort term is endgame-only (a passer is shepherded home once
+                // the board is bare), so it rides on the endgame value below.
                 int ownKingDist = white ? chebyshev(whiteKingX, whiteKingY, x, y)
                         : chebyshev(blackKingX, blackKingY, x, y);
                 int enemyKingDist = white ? chebyshev(blackKingX, blackKingY, x, y)
                         : chebyshev(whiteKingX, whiteKingY, x, y);
                 int escort = (enemyKingDist - ownKingDist) * PASSED_PAWN_KING_ESCORT; // + if our king is closer
-                bonus += (PASSED_PAWN_ENDGAME[relativeRank] + escort) * endgameWeight / PHASE_MAX;
+
+                // Blend the midgame and endgame passed-pawn tables by phase, the escort
+                // added to the endgame side so it fades in as material comes off.
+                int bonus = taper(PASSED_PAWN_MG[relativeRank],
+                        PASSED_PAWN_EG[relativeRank] + escort, phase);
 
                 if (white) { // a passer helps its owner
                     score += bonus; // add it for White
