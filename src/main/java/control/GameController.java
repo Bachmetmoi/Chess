@@ -29,10 +29,19 @@ public class GameController {
 
     // methods
     public void startGame(BoardSetup board) {
+        startGame(board, Faction.WHITE);
+    }
+
+    /**
+     * Starts a game from the given setup with {@code firstToMove} on move. The
+     * standard game passes {@link Faction#WHITE}; a customized position may hand
+     * the first move to either side.
+     */
+    public void startGame(BoardSetup board, Faction firstToMove) {
         // setup Board
         ChessBoard b = board.setUp();
         List<Move> move = new ArrayList<>();
-        gameState = new GameState(Faction.WHITE, move, Result.ONGOING, b);
+        gameState = new GameState(firstToMove, move, Result.ONGOING, b);
         legalMove = new LegalMove(b);
         moveUntilDraw = 0;
     }
