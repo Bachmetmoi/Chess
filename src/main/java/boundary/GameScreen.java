@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import control.BoardSetup;
+import control.ChessEngine;
 import control.GameController;
 import entity.board.Cell;
 import entity.enums.Faction;
@@ -51,10 +52,22 @@ public class GameScreen extends Screen {
     // game
     private GameController gameController;
 
+    // engine opponent (only used in "Play vs Engine" mode)
+    private static final int ENGINE_DEPTH = 6; // how many half-moves the engine looks ahead
+    private final boolean vsEngine; // true when the human plays against the engine
+    private Faction engineSide = Faction.BLACK; // the side the engine plays; flips with the board in engine mode
+    private ChessEngine engine; // created on game start when vsEngine is true
+
     // view
     private final StackPane[][] squares = new StackPane[N][N];
+    private GridPane grid; // the board grid; cells are re-laid out on flip
     private Label statusLabel;
     private Button undoButton;
+
+    // board orientation: false = White at the bottom (default), true = rotated 180
+    // so Black sits at the bottom. In engine mode the engine plays the side now at
+    // the top, so flipping makes it play White instead of Black.
+    private boolean flipped = false;
 
     // interaction state
     private Integer selX = null;
@@ -74,6 +87,12 @@ public class GameScreen extends Screen {
         super(navigator);
         this.setup = setup;
         this.firstToMove = firstToMove;
+        this(navigator, false);
+    }
+
+    public GameScreen(Navigator navigator, boolean vsEngine) {
+        super(navigator);
+        this.vsEngine = vsEngine;
     }
 
     @Override
@@ -81,26 +100,30 @@ public class GameScreen extends Screen {
         gameController = new GameController();
         gameController.startGame(setup, firstToMove);
 
-        GridPane grid = new GridPane();
+        // In engine mode, build the engine that will answer the human's moves.
+        if (vsEngine) {
+            engine = new ChessEngine(gameController, ENGINE_DEPTH);
+        }
+
+        grid = new GridPane();
         grid.setAlignment(Pos.CENTER);
 
-        // Build squares. Screen row 0 is the top = rank 8 (board y = 7).
-        for (int row = 0; row < N; row++) {
-            for (int col = 0; col < N; col++) {
-                int bx = col; // file a..h -> x 0..7
-                int by = N - 1 - row; // top row -> y 7
-
+        // Build one StackPane per board square, indexed by board coordinates. Their
+        // position in the grid is decided by layoutGrid(), which depends on the
+        // current orientation, so a flip just re-lays out these same cells.
+        for (int bx = 0; bx < N; bx++) {
+            for (int by = 0; by < N; by++) {
                 Rectangle bg = new Rectangle(SQUARE, SQUARE);
                 StackPane cell = new StackPane(bg);
                 cell.setUserData(new int[] { bx, by });
                 cell.setOnMouseClicked(e -> onClick((int[]) cell.getUserData()));
 
                 squares[bx][by] = cell;
-                grid.add(cell, col, row);
             }
         }
+        layoutGrid();
 
-        // Top bar: return to the main menu, and undo.
+        // Top bar: return to the main menu, undo, and flip the board.
         Button menuButton = new Button("Menu");
         menuButton.setFont(Font.font(14));
         menuButton.setStyle("-fx-padding: 6 18;");
@@ -111,7 +134,12 @@ public class GameScreen extends Screen {
         undoButton.setStyle("-fx-padding: 6 18;");
         undoButton.setOnAction(e -> undo());
 
-        HBox topBar = new HBox(10, menuButton, undoButton);
+        Button flipButton = new Button("Flip");
+        flipButton.setFont(Font.font(14));
+        flipButton.setStyle("-fx-padding: 6 18;");
+        flipButton.setOnAction(e -> flip());
+
+        HBox topBar = new HBox(10, menuButton, undoButton, flipButton);
         topBar.setAlignment(Pos.CENTER);
         topBar.setPadding(new Insets(0, 0, 10, 0));
 
@@ -195,11 +223,76 @@ public class GameScreen extends Screen {
 
         clearSelection();
         gameController.checkGameStatus();
+
+        maybeEngineMove(); // if we're playing the engine, let it reply now
+
+        redraw();
+    }
+
+    /**
+     * In engine mode, have the engine play its move whenever it is the engine's
+     * turn and the game is still going. The engine already fills in a queen for
+     * its own promotions, so no promotion dialog is needed here.
+     */
+    private void maybeEngineMove() {
+        if (!vsEngine || engine == null) {
+            return; // two-player game, or engine not ready: nothing to do
+        }
+        if (gameController.getGameState().getGameStatus() != Result.ONGOING) {
+            return; // the human's move just ended the game
+        }
+        if (gameController.getGameState().getTurn() != engineSide) {
+            return; // it's still the human's turn
+        }
+        Move reply = engine.findBestMove(); // ask the engine for its best move
+        if (reply == null) {
+            return; // no legal reply (mate/stalemate); checkGameStatus already set the result
+        }
+        gameController.executes(reply); // play the engine's move
+        gameController.checkGameStatus(); // update the result after the engine moved
+    }
+
+    /**
+     * Places every board square into the grid according to the current
+     * orientation. Default: screen row 0 (top) is rank 8 and file a is on the
+     * left. Flipped: the board is rotated 180 so rank 1 is at the top and file h
+     * is on the left, i.e. the view from Black's side.
+     */
+    private void layoutGrid() {
+        grid.getChildren().clear();
+        for (int bx = 0; bx < N; bx++) {
+            for (int by = 0; by < N; by++) {
+                int col = flipped ? (N - 1 - bx) : bx;
+                int row = flipped ? by : (N - 1 - by);
+                grid.add(squares[bx][by], col, row);
+            }
+        }
+    }
+
+    /**
+     * Flips the board between White's and Black's point of view. In engine mode
+     * the engine plays whichever side is now at the top, so flipping hands it the
+     * opposite colour (e.g. White instead of Black); if that makes it the engine's
+     * turn it replies straight away.
+     */
+    private void flip() {
+        flipped = !flipped;
+        if (vsEngine) {
+            engineSide = flipped ? Faction.WHITE : Faction.BLACK;
+        }
+        layoutGrid();
+        clearSelection();
         redraw();
     }
 
     private void undo() {
         gameController.undoMove();
+        // In engine mode, one undo takes back the engine's reply and leaves it on
+        // the engine's turn; undo once more so control returns to the human.
+        if (vsEngine && !gameController.getGameState().getMoveHistory().isEmpty()
+                && gameController.getGameState().getTurn() == engineSide) {
+            gameController.undoMove();
+        }
         gameController.getGameState().setGameStatus(Result.ONGOING);
         clearSelection();
         redraw();

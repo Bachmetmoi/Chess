@@ -33,7 +33,7 @@ public class ModeSelectScreen extends Screen {
     }
 
     private void onEngine() {
-        navigator.showUnderDevelopment("Play vs Engine");
+        navigator.showEngineGame();
     }
 
     private void onCustomize() {

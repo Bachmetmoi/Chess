@@ -12,7 +12,7 @@ import entity.move.NormalMove;
 public class King extends Piece {
     // constructor
     public King(Faction side) {
-        super(0, side);
+        super(999, side);
     }
 
     // methods
