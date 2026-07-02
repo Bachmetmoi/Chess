@@ -91,6 +91,7 @@ public class GameScreen extends Screen {
         this(navigator, new BoardSetup(), Faction.WHITE, vsEngine);
     }
 
+    /** Canonical constructor: every final field is initialized here. */
     private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine) {
         super(navigator);
         this.setup = setup;
