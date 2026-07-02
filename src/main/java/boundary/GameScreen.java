@@ -79,19 +79,23 @@ public class GameScreen extends Screen {
     private final Faction firstToMove;
 
     public GameScreen(Navigator navigator) {
-        this(navigator, new BoardSetup(), Faction.WHITE);
+        this(navigator, new BoardSetup(), Faction.WHITE, false);
     }
 
     /** Starts from a specific setup with {@code firstToMove} on move. */
     public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove) {
-        super(navigator);
-        this.setup = setup;
-        this.firstToMove = firstToMove;
-        this(navigator, false);
+        this(navigator, setup, firstToMove, false);
     }
 
     public GameScreen(Navigator navigator, boolean vsEngine) {
+        this(navigator, new BoardSetup(), Faction.WHITE, vsEngine);
+    }
+
+    /** Canonical constructor: every final field is initialized here. */
+    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine) {
         super(navigator);
+        this.setup = setup;
+        this.firstToMove = firstToMove;
         this.vsEngine = vsEngine;
     }
 
