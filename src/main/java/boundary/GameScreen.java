@@ -55,7 +55,7 @@ public class GameScreen extends Screen {
     // engine opponent (only used in "Play vs Engine" mode)
     private static final int ENGINE_DEPTH = 6; // how many half-moves the engine looks ahead
     private final boolean vsEngine; // true when the human plays against the engine
-    private Faction engineSide = Faction.BLACK; // the side the engine plays; flips with the board in engine mode
+    private final Faction engineSide = Faction.BLACK; // the side the engine plays, fixed at game start
     private ChessEngine engine; // created on game start when vsEngine is true
 
     // view
@@ -65,8 +65,8 @@ public class GameScreen extends Screen {
     private Button undoButton;
 
     // board orientation: false = White at the bottom (default), true = rotated 180
-    // so Black sits at the bottom. In engine mode the engine plays the side now at
-    // the top, so flipping makes it play White instead of Black.
+    // so Black sits at the bottom. Purely visual: it never changes which side a
+    // player (or the engine) is playing.
     private boolean flipped = false;
 
     // interaction state
@@ -79,19 +79,22 @@ public class GameScreen extends Screen {
     private final Faction firstToMove;
 
     public GameScreen(Navigator navigator) {
-        this(navigator, new BoardSetup(), Faction.WHITE);
+        this(navigator, new BoardSetup(), Faction.WHITE, false);
     }
 
     /** Starts from a specific setup with {@code firstToMove} on move. */
     public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove) {
-        super(navigator);
-        this.setup = setup;
-        this.firstToMove = firstToMove;
-        this(navigator, false);
+        this(navigator, setup, firstToMove, false);
     }
 
     public GameScreen(Navigator navigator, boolean vsEngine) {
+        this(navigator, new BoardSetup(), Faction.WHITE, vsEngine);
+    }
+
+    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine) {
         super(navigator);
+        this.setup = setup;
+        this.firstToMove = firstToMove;
         this.vsEngine = vsEngine;
     }
 
@@ -270,16 +273,11 @@ public class GameScreen extends Screen {
     }
 
     /**
-     * Flips the board between White's and Black's point of view. In engine mode
-     * the engine plays whichever side is now at the top, so flipping hands it the
-     * opposite colour (e.g. White instead of Black); if that makes it the engine's
-     * turn it replies straight away.
+     * Flips the board between White's and Black's point of view. Purely visual:
+     * the sides keep playing their assigned colours, it only rotates the view.
      */
     private void flip() {
         flipped = !flipped;
-        if (vsEngine) {
-            engineSide = flipped ? Faction.WHITE : Faction.BLACK;
-        }
         layoutGrid();
         clearSelection();
         redraw();

@@ -4,6 +4,7 @@ import entity.board.Cell;
 import entity.board.ChessBoard;
 import entity.enums.Faction;
 import entity.move.Castling;
+import entity.move.EnPassant;
 import entity.move.Move;
 import entity.pieces.Bishop;
 import entity.pieces.King;
@@ -203,6 +204,14 @@ public class LegalMove {
             }
         }
 
+        // en passant: the captured pawn is NOT on the landing square but beside the
+        // start square, so lift it off for the test (and restore it below).
+        Piece enPassantVictim = null;
+        if (move instanceof EnPassant) {
+            enPassantVictim = board[endX][startY].getContain();
+            board[endX][startY].setContain(null);
+        }
+
         // normal move: play it, see whether our king is attacked, then take it back
         board[endX][endY].setContain(movingPiece);
         board[startX][startY].setContain(null);
@@ -217,6 +226,9 @@ public class LegalMove {
 
         board[startX][startY].setContain(movingPiece);
         board[endX][endY].setContain(capturedPiece);
+        if (enPassantVictim != null) {
+            board[endX][startY].setContain(enPassantVictim);
+        }
 
         return legal;
     }

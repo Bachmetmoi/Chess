@@ -210,9 +210,10 @@ public class GameController {
             }
 
             if (undo instanceof Promotion) {
-                Pawn pawn = new Pawn(movingPiece.getSide());
+                // put the ORIGINAL pawn back (it carries the right move count;
+                // reduceMoveCount below adjusts the piece actually on the board)
                 Piece capturePiece = ((Promotion) undo).getCapturePiece();
-                board[startX][startY].setContain(pawn);
+                board[startX][startY].setContain(movingPiece);
                 board[endX][endY].setContain(capturePiece);
             }
         }

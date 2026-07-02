@@ -46,6 +46,8 @@ public class Navigator {
 
     public void showBoardEditor() {
         show(new BoardEditorScreen(this).getView());
+    }
+
     public void showEngineGame() {
         show(new GameScreen(this, true).getView());
     }
