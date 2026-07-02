@@ -13,9 +13,7 @@ import entity.enums.Result;
 import entity.move.Move;
 import entity.move.Promotion;
 import entity.pieces.Bishop;
-import entity.pieces.King;
 import entity.pieces.Knight;
-import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.pieces.Queen;
 import entity.pieces.Rook;
@@ -76,7 +74,19 @@ public class GameScreen extends Screen {
     private Integer selY = null;
     private List<Move> selMoves = new ArrayList<>();
 
+    // starting position (standard game, or a customized one)
+    private final BoardSetup setup;
+    private final Faction firstToMove;
+
     public GameScreen(Navigator navigator) {
+        this(navigator, new BoardSetup(), Faction.WHITE);
+    }
+
+    /** Starts from a specific setup with {@code firstToMove} on move. */
+    public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove) {
+        super(navigator);
+        this.setup = setup;
+        this.firstToMove = firstToMove;
         this(navigator, false);
     }
 
@@ -88,7 +98,7 @@ public class GameScreen extends Screen {
     @Override
     public Parent getView() {
         gameController = new GameController();
-        gameController.startGame(new BoardSetup());
+        gameController.startGame(setup, firstToMove);
 
         // In engine mode, build the engine that will answer the human's moves.
         if (vsEngine) {
@@ -345,18 +355,7 @@ public class GameScreen extends Screen {
     }
 
     private Text glyph(Piece piece) {
-        Text t = new Text(symbol(piece));
-        t.setFont(Font.font("Segoe UI Symbol", SQUARE * 0.72));
-        if (piece.getSide() == Faction.WHITE) {
-            t.setFill(Color.WHITE);
-            t.setStroke(Color.web("#333333"));
-            t.setStrokeWidth(1.2);
-        } else {
-            t.setFill(Color.web("#202020"));
-            t.setStroke(Color.web("#202020"));
-            t.setStrokeWidth(1.2);
-        }
-        return t;
+        return PieceGlyphs.glyph(piece, SQUARE * 0.72);
     }
 
     private void updateStatus() {
@@ -400,29 +399,4 @@ public class GameScreen extends Screen {
         return new Queen(side);
     }
 
-    // ----- glyphs -----
-
-    private String symbol(Piece piece) {
-        // Solid (filled) glyphs are used for both colours; the fill colour set in
-        // glyph() distinguishes white from black, which reads best on the board.
-        if (piece instanceof King) {
-            return "\u265A";
-        }
-        if (piece instanceof Queen) {
-            return "\u265B";
-        }
-        if (piece instanceof Rook) {
-            return "\u265C";
-        }
-        if (piece instanceof Bishop) {
-            return "\u265D";
-        }
-        if (piece instanceof Knight) {
-            return "\u265E";
-        }
-        if (piece instanceof Pawn) {
-            return "\u265F";
-        }
-        return "";
-    }
 }

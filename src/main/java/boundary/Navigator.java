@@ -1,5 +1,7 @@
 package boundary;
 
+import control.BoardSetup;
+import entity.enums.Faction;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
@@ -37,6 +39,13 @@ public class Navigator {
         show(new GameScreen(this).getView());
     }
 
+    /** Starts a game from a customized position with {@code firstToMove} on move. */
+    public void showGame(BoardSetup setup, Faction firstToMove) {
+        show(new GameScreen(this, setup, firstToMove).getView());
+    }
+
+    public void showBoardEditor() {
+        show(new BoardEditorScreen(this).getView());
     public void showEngineGame() {
         show(new GameScreen(this, true).getView());
     }
