@@ -77,12 +77,23 @@ public class GameScreen extends Screen {
     private List<Move> selMoves = new ArrayList<>();
 
     public GameScreen(Navigator navigator) {
-        this(navigator, false);
+        this(navigator, false, false);
     }
 
     public GameScreen(Navigator navigator, boolean vsEngine) {
+        this(navigator, vsEngine, false);
+    }
+
+    /**
+     * @param engineIsWhite in engine mode, whether the engine plays White. When it
+     *                      does, the board starts flipped (White at the top, the
+     *                      human's Black at the bottom) and the engine moves first.
+     */
+    public GameScreen(Navigator navigator, boolean vsEngine, boolean engineIsWhite) {
         super(navigator);
         this.vsEngine = vsEngine;
+        this.engineSide = engineIsWhite ? Faction.WHITE : Faction.BLACK;
+        this.flipped = engineIsWhite; // engine plays the side at the top of the board
     }
 
     @Override
@@ -144,6 +155,10 @@ public class GameScreen extends Screen {
         BorderPane.setAlignment(statusLabel, Pos.CENTER);
         root.setPadding(new Insets(12));
         root.setStyle("-fx-background-color: #312E2B;");
+
+        // If the engine has White it is on move at the start position: let it play
+        // its first move before the human sees the board.
+        maybeEngineMove();
 
         redraw();
         return root;

@@ -37,8 +37,12 @@ public class Navigator {
         show(new GameScreen(this).getView());
     }
 
-    public void showEngineGame() {
-        show(new GameScreen(this, true).getView());
+    public void showPlayAs() {
+        show(new PlayAsScreen(this).getView());
+    }
+
+    public void showEngineGame(boolean engineIsWhite) {
+        show(new GameScreen(this, true, engineIsWhite).getView());
     }
 
     private void show(Parent root) {
