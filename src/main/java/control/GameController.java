@@ -242,6 +242,14 @@ public class GameController {
             return Result.DRAW;
         }
 
+        // insufficient material: with only the two kings left neither side can
+        // deliver checkmate, so the game is a dead draw regardless of whose move
+        // it is.
+        if (onlyKingsLeft()) {
+            gameState.setGameStatus(Result.DRAW);
+            return Result.DRAW;
+        }
+
         // if it is check and no moves --> checkmate
         // if it is not check and no moves --> draw
         // else: ongoing
@@ -293,6 +301,24 @@ public class GameController {
         gameState.setGameStatus(Result.DRAW);
         return Result.DRAW;
 
+    }
+
+    /**
+     * True when nothing but the two kings remain on the board. In that position
+     * neither side has any material to deliver checkmate, so the game is a dead
+     * draw by insufficient material.
+     */
+    private boolean onlyKingsLeft() {
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                Piece p = board[i][j].getContain();
+                if (p != null && !(p instanceof King)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**
