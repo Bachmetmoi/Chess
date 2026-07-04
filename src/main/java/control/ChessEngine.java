@@ -69,6 +69,7 @@ public class ChessEngine {
 
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
+    private final boolean useOpeningBook; // the book's lines assume the standard start, so custom games turn it off
 
     // Set per call to findBestMove: when timeLimited is true the search must stop once
     // System.nanoTime() reaches deadlineNanos (checked by checkTime, which unwinds the
@@ -94,8 +95,19 @@ public class ChessEngine {
      * @param searchDepth    how many half-moves to look ahead (3 or 4 is fine to start)
      */
     public ChessEngine(GameController gameController, int searchDepth) {
+        this(gameController, searchDepth, true); // a plain engine game starts from the standard position
+    }
+
+    /**
+     * @param useOpeningBook whether the hardcoded opening book may answer; pass
+     *                       {@code false} for games that do not start from the
+     *                       standard position (a customized setup), where a book
+     *                       reply that happens to be legal could still be a blunder
+     */
+    public ChessEngine(GameController gameController, int searchDepth, boolean useOpeningBook) {
         this.gameController = gameController; // remember the controller so we can read the board and play moves
         this.searchDepth = searchDepth; // remember how deep the search should go
+        this.useOpeningBook = useOpeningBook; // remember whether the book applies to this game
     }
 
     /**
@@ -111,7 +123,7 @@ public class ChessEngine {
             return null; // nothing to choose, so report "no move"
         }
 
-        Move bookMove = openingBookMove(state, legalMoves); // hardcoded opening reply, if one applies here
+        Move bookMove = useOpeningBook ? openingBookMove(state, legalMoves) : null; // hardcoded opening reply, if one applies here
         if (bookMove != null) { // a book move overrides the search (e.g. answer 1.e4 with 1...e5)
             return bookMove; // play it straight away without thinking
         }
