@@ -1,5 +1,7 @@
 package boundary;
 
+import java.util.Optional;
+
 import control.BoardSetup;
 import control.CustomBoardSetup;
 import entity.board.Cell;
@@ -16,6 +18,8 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
@@ -325,8 +329,40 @@ public class BoardEditorScreen extends Screen {
     }
 
     private void onEngine() {
-        // Reuses the Play menu's Engine action, which is still under development.
-        navigator.showUnderDevelopment("Play vs Engine");
+        String error = validate();
+        if (error != null) {
+            message.setText(error);
+            return;
+        }
+        Faction humanSide = askHumanSide();
+        if (humanSide == null) {
+            return; // dialog dismissed: stay in the editor with the position intact
+        }
+        // The engine takes the other colour; whoever the "Side to move" toggle
+        // names moves first, so the engine may open the game.
+        navigator.showEngineGame(new CustomBoardSetup(snapshot()), sideToMove,
+                humanSide == Faction.BLACK);
+    }
+
+    /**
+     * Asks which colour the human will play against the engine. Returns
+     * {@code null} when the dialog is cancelled, so the caller stays in the
+     * editor (leaving via a navigator screen would discard the position).
+     */
+    private Faction askHumanSide() {
+        ButtonType white = new ButtonType("White");
+        ButtonType black = new ButtonType("Black");
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Play vs Engine");
+        dialog.setHeaderText("Play as:");
+        dialog.getDialogPane().getButtonTypes().addAll(white, black, ButtonType.CANCEL);
+
+        Optional<ButtonType> choice = dialog.showAndWait();
+        if (choice.isEmpty() || choice.get() == ButtonType.CANCEL) {
+            return null;
+        }
+        return choice.get() == white ? Faction.WHITE : Faction.BLACK;
     }
 
     // ----- helpers -----

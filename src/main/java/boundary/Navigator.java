@@ -57,6 +57,16 @@ public class Navigator {
         show(new GameScreen(this, true, engineIsWhite).getView());
     }
 
+    /**
+     * Starts a game against the engine from a customized position with
+     * {@code firstToMove} on move. The engine plays White when
+     * {@code engineIsWhite}; if that side is also first to move, it thinks and
+     * plays before the human sees the board, exactly like the standard engine game.
+     */
+    public void showEngineGame(BoardSetup setup, Faction firstToMove, boolean engineIsWhite) {
+        show(new GameScreen(this, setup, firstToMove, true, engineIsWhite).getView());
+    }
+
     private void show(Parent root) {
         if (scene == null) {
             scene = new Scene(root);
