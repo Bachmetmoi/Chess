@@ -96,8 +96,12 @@ public class GameScreen extends Screen {
         this(navigator, new BoardSetup(), Faction.WHITE, vsEngine, engineIsWhite);
     }
 
-    /** Canonical constructor: every final field is initialized here. */
-    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine,
+    /**
+     * Canonical constructor: every final field is initialized here. Combining a
+     * customized {@code setup} with {@code vsEngine} plays that position against
+     * the engine; if the engine's side is first to move it replies immediately.
+     */
+    public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine,
             boolean engineIsWhite) {
         super(navigator);
         this.setup = setup;
@@ -113,8 +117,11 @@ public class GameScreen extends Screen {
         gameController.startGame(setup, firstToMove);
 
         // In engine mode, build the engine that will answer the human's moves.
+        // Its opening book assumes the standard starting position, so it is only
+        // enabled when this game actually begins from one.
         if (vsEngine) {
-            engine = new ChessEngine(gameController, ENGINE_DEPTH);
+            boolean standardStart = setup.getClass() == BoardSetup.class && firstToMove == Faction.WHITE;
+            engine = new ChessEngine(gameController, ENGINE_DEPTH, standardStart);
         }
 
         grid = new GridPane();
@@ -305,6 +312,10 @@ public class GameScreen extends Screen {
             gameController.undoMove();
         }
         gameController.getGameState().setGameStatus(Result.ONGOING);
+        // If the takebacks above removed the engine's opening move, it is the
+        // engine's turn again with nothing left to trigger it: let it replay now
+        // instead of leaving the game stuck. A no-op on the human's turn.
+        maybeEngineMove();
         clearSelection();
         redraw();
     }
