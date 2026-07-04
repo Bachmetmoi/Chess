@@ -55,7 +55,7 @@ public class GameScreen extends Screen {
     // engine opponent (only used in "Play vs Engine" mode)
     private static final int ENGINE_DEPTH = 6; // how many half-moves the engine looks ahead
     private final boolean vsEngine; // true when the human plays against the engine
-    private final Faction engineSide = Faction.BLACK; // the side the engine plays, fixed at game start
+    private final Faction engineSide; // the side the engine plays, fixed at game start
     private ChessEngine engine; // created on game start when vsEngine is true
 
     // view
@@ -79,24 +79,32 @@ public class GameScreen extends Screen {
     private final Faction firstToMove;
 
     public GameScreen(Navigator navigator) {
-        this(navigator, new BoardSetup(), Faction.WHITE, false);
+        this(navigator, new BoardSetup(), Faction.WHITE, false, false);
     }
 
     /** Starts from a specific setup with {@code firstToMove} on move. */
     public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove) {
-        this(navigator, setup, firstToMove, false);
+        this(navigator, setup, firstToMove, false, false);
     }
 
-    public GameScreen(Navigator navigator, boolean vsEngine) {
-        this(navigator, new BoardSetup(), Faction.WHITE, vsEngine);
+    /**
+     * @param engineIsWhite in engine mode, whether the engine plays White. When it
+     *                      does, the board starts flipped (White at the top, the
+     *                      human's Black at the bottom) and the engine moves first.
+     */
+    public GameScreen(Navigator navigator, boolean vsEngine, boolean engineIsWhite) {
+        this(navigator, new BoardSetup(), Faction.WHITE, vsEngine, engineIsWhite);
     }
 
     /** Canonical constructor: every final field is initialized here. */
-    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine) {
+    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine,
+            boolean engineIsWhite) {
         super(navigator);
         this.setup = setup;
         this.firstToMove = firstToMove;
         this.vsEngine = vsEngine;
+        this.engineSide = engineIsWhite ? Faction.WHITE : Faction.BLACK;
+        this.flipped = engineIsWhite; // engine plays the side at the top of the board
     }
 
     @Override
@@ -158,6 +166,10 @@ public class GameScreen extends Screen {
         BorderPane.setAlignment(statusLabel, Pos.CENTER);
         root.setPadding(new Insets(12));
         root.setStyle("-fx-background-color: #312E2B;");
+
+        // If the engine has White it is on move at the start position: let it play
+        // its first move before the human sees the board.
+        maybeEngineMove();
 
         redraw();
         return root;

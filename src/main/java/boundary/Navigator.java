@@ -48,8 +48,13 @@ public class Navigator {
         show(new BoardEditorScreen(this).getView());
     }
 
-    public void showEngineGame() {
-        show(new GameScreen(this, true).getView());
+    /** Lets the player pick a side before starting a game against the engine. */
+    public void showPlayAs() {
+        show(new PlayAsScreen(this).getView());
+    }
+
+    public void showEngineGame(boolean engineIsWhite) {
+        show(new GameScreen(this, true, engineIsWhite).getView());
     }
 
     private void show(Parent root) {
