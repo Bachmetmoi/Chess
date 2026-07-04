@@ -128,7 +128,7 @@ public class ChessEngine {
             return null; // nothing to choose, so report "no move"
         }
 
-        Move bookMove = useOpeningBook ? openingBookMove(state, legalMoves) : null; // hardcoded opening reply, if one applies here
+        Move bookMove = useOpeningBook ? openingBook.bookMove(state, legalMoves) : null; // hardcoded opening move, if one applies here
         if (bookMove != null) { // a book move overrides the search (e.g. answer 1.e4 with 1...e5)
             return bookMove; // play it straight away without thinking
         }
