@@ -14,18 +14,8 @@ import entity.pieces.Rook;
 public class BoardSetup {
     // methods
     public ChessBoard setUp() {
-        ChessBoard chessBoard = new ChessBoard();
+        ChessBoard chessBoard = blankBoard();
         Cell[][] board = chessBoard.getBoard();
-
-        // set color
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                BoardColor c = BoardColor.WHITE;
-                if ((i + j) % 2 == 0)
-                    c = BoardColor.BLACK;
-                board[i][j] = new Cell(i, j, c);
-            }
-        }
 
         // place pieces
         board[0][0].setContain(new Rook(Faction.WHITE));
@@ -53,5 +43,22 @@ public class BoardSetup {
 
         return chessBoard;
 
+    }
+
+    /**
+     * Builds an empty board with every cell created and coloured, but no pieces.
+     * Shared by {@link #setUp()} and by {@link CustomBoardSetup}, which fills the
+     * cells from a hand-built position.
+     */
+    protected ChessBoard blankBoard() {
+        ChessBoard chessBoard = new ChessBoard();
+        Cell[][] board = chessBoard.getBoard();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                BoardColor c = ((i + j) % 2 == 0) ? BoardColor.BLACK : BoardColor.WHITE;
+                board[i][j] = new Cell(i, j, c);
+            }
+        }
+        return chessBoard;
     }
 }

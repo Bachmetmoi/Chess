@@ -18,11 +18,14 @@ public class ModeSelectScreen extends Screen {
         Button engine = menuButton("Engine");
         engine.setOnAction(e -> onEngine());
 
+        Button customize = menuButton("Customize");
+        customize.setOnAction(e -> onCustomize());
+
         Button back = secondaryButton("Back");
         back.setOnAction(e -> onBack());
 
         return rootBox(titleLabel("Play"), subtitleLabel("Who do you want to play against?"),
-                twoPlayer, engine, back);
+                twoPlayer, engine, customize, back);
     }
 
     private void onTwoPlayer() {
@@ -31,6 +34,10 @@ public class ModeSelectScreen extends Screen {
 
     private void onEngine() {
         navigator.showPlayAs();
+    }
+
+    private void onCustomize() {
+        navigator.showBoardEditor();
     }
 
     private void onBack() {
