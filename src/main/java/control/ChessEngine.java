@@ -70,6 +70,7 @@ public class ChessEngine {
     private final GameController gameController; // the game we are thinking about (board + rules live here)
     private final int searchDepth; // how many plies (half-moves) deep we look ahead
     private final boolean useOpeningBook; // the book's lines assume the standard start, so custom games turn it off
+    private final OpeningMove openingMove = new OpeningMove(); // picks White's random first move (e4/d4/Nf3/Nc3)
 
     // Set per call to findBestMove: when timeLimited is true the search must stop once
     // System.nanoTime() reaches deadlineNanos (checked by checkTime, which unwinds the
@@ -123,9 +124,15 @@ public class ChessEngine {
             return null; // nothing to choose, so report "no move"
         }
 
-        Move bookMove = useOpeningBook ? openingBookMove(state, legalMoves) : null; // hardcoded opening reply, if one applies here
-        if (bookMove != null) { // a book move overrides the search (e.g. answer 1.e4 with 1...e5)
-            return bookMove; // play it straight away without thinking
+        if (useOpeningBook) { // the book only makes sense from the standard starting position
+            Move firstMove = openingMove.chooseFirstMove(state, legalMoves); // White's random opener (e4/d4/Nf3/Nc3)
+            if (firstMove != null) { // it is White's first move: play the chosen opening
+                return firstMove; // no need to search, any of the four is a sound start
+            }
+            Move bookMove = openingBookMove(state, legalMoves); // hardcoded opening reply for Black, if one applies here
+            if (bookMove != null) { // a book move overrides the search (e.g. answer 1.e4 with 1...e5)
+                return bookMove; // play it straight away without thinking
+            }
         }
 
         clearOrderingMemory(); // start each decision with fresh killer/history tables
