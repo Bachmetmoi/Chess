@@ -40,10 +40,19 @@ public class GameController {
 
     // methods
     public void startGame(BoardSetup board) {
+        startGame(board, Faction.WHITE);
+    }
+
+    /**
+     * Starts a game from the given setup with {@code firstToMove} on move. The
+     * standard game passes {@link Faction#WHITE}; a customized position may hand
+     * the first move to either side.
+     */
+    public void startGame(BoardSetup board, Faction firstToMove) {
         // setup Board
         ChessBoard b = board.setUp();
         List<Move> move = new ArrayList<>();
-        gameState = new GameState(Faction.WHITE, move, Result.ONGOING, b);
+        gameState = new GameState(firstToMove, move, Result.ONGOING, b);
         legalMove = new LegalMove(b);
         moveUntilDraw = 0;
     }
@@ -201,9 +210,10 @@ public class GameController {
             }
 
             if (undo instanceof Promotion) {
-                Pawn pawn = new Pawn(movingPiece.getSide());
+                // put the ORIGINAL pawn back (it carries the right move count;
+                // reduceMoveCount below adjusts the piece actually on the board)
                 Piece capturePiece = ((Promotion) undo).getCapturePiece();
-                board[startX][startY].setContain(pawn);
+                board[startX][startY].setContain(movingPiece);
                 board[endX][endY].setContain(capturePiece);
             }
         }
@@ -228,6 +238,14 @@ public class GameController {
         // game is a draw, even when legal moves are still available. The current
         // position was already recorded by executes(), so we just read the count.
         if (gameState.positionCount(positionKey()) >= 3) {
+            gameState.setGameStatus(Result.DRAW);
+            return Result.DRAW;
+        }
+
+        // insufficient material: with only the two kings left neither side can
+        // deliver checkmate, so the game is a dead draw regardless of whose move
+        // it is.
+        if (onlyKingsLeft()) {
             gameState.setGameStatus(Result.DRAW);
             return Result.DRAW;
         }
@@ -283,6 +301,24 @@ public class GameController {
         gameState.setGameStatus(Result.DRAW);
         return Result.DRAW;
 
+    }
+
+    /**
+     * True when nothing but the two kings remain on the board. In that position
+     * neither side has any material to deliver checkmate, so the game is a dead
+     * draw by insufficient material.
+     */
+    private boolean onlyKingsLeft() {
+        Cell[][] board = gameState.getChessBoard().getBoard();
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                Piece p = board[i][j].getContain();
+                if (p != null && !(p instanceof King)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**

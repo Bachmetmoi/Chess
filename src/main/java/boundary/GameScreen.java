@@ -13,9 +13,7 @@ import entity.enums.Result;
 import entity.move.Move;
 import entity.move.Promotion;
 import entity.pieces.Bishop;
-import entity.pieces.King;
 import entity.pieces.Knight;
-import entity.pieces.Pawn;
 import entity.pieces.Piece;
 import entity.pieces.Queen;
 import entity.pieces.Rook;
@@ -57,7 +55,7 @@ public class GameScreen extends Screen {
     // engine opponent (only used in "Play vs Engine" mode)
     private static final int ENGINE_DEPTH = 6; // how many half-moves the engine looks ahead
     private final boolean vsEngine; // true when the human plays against the engine
-    private Faction engineSide = Faction.BLACK; // the side the engine plays; flips with the board in engine mode
+    private final Faction engineSide; // the side the engine plays, fixed at game start
     private ChessEngine engine; // created on game start when vsEngine is true
 
     // view
@@ -67,8 +65,8 @@ public class GameScreen extends Screen {
     private Button undoButton;
 
     // board orientation: false = White at the bottom (default), true = rotated 180
-    // so Black sits at the bottom. In engine mode the engine plays the side now at
-    // the top, so flipping makes it play White instead of Black.
+    // so Black sits at the bottom. Purely visual: it never changes which side a
+    // player (or the engine) is playing.
     private boolean flipped = false;
 
     // interaction state
@@ -76,12 +74,17 @@ public class GameScreen extends Screen {
     private Integer selY = null;
     private List<Move> selMoves = new ArrayList<>();
 
+    // starting position (standard game, or a customized one)
+    private final BoardSetup setup;
+    private final Faction firstToMove;
+
     public GameScreen(Navigator navigator) {
-        this(navigator, false, false);
+        this(navigator, new BoardSetup(), Faction.WHITE, false, false);
     }
 
-    public GameScreen(Navigator navigator, boolean vsEngine) {
-        this(navigator, vsEngine, false);
+    /** Starts from a specific setup with {@code firstToMove} on move. */
+    public GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove) {
+        this(navigator, setup, firstToMove, false, false);
     }
 
     /**
@@ -90,7 +93,15 @@ public class GameScreen extends Screen {
      *                      human's Black at the bottom) and the engine moves first.
      */
     public GameScreen(Navigator navigator, boolean vsEngine, boolean engineIsWhite) {
+        this(navigator, new BoardSetup(), Faction.WHITE, vsEngine, engineIsWhite);
+    }
+
+    /** Canonical constructor: every final field is initialized here. */
+    private GameScreen(Navigator navigator, BoardSetup setup, Faction firstToMove, boolean vsEngine,
+            boolean engineIsWhite) {
         super(navigator);
+        this.setup = setup;
+        this.firstToMove = firstToMove;
         this.vsEngine = vsEngine;
         this.engineSide = engineIsWhite ? Faction.WHITE : Faction.BLACK;
         this.flipped = engineIsWhite; // engine plays the side at the top of the board
@@ -99,7 +110,7 @@ public class GameScreen extends Screen {
     @Override
     public Parent getView() {
         gameController = new GameController();
-        gameController.startGame(new BoardSetup());
+        gameController.startGame(setup, firstToMove);
 
         // In engine mode, build the engine that will answer the human's moves.
         if (vsEngine) {
@@ -275,16 +286,11 @@ public class GameScreen extends Screen {
     }
 
     /**
-     * Flips the board between White's and Black's point of view. In engine mode
-     * the engine plays whichever side is now at the top, so flipping hands it the
-     * opposite colour (e.g. White instead of Black); if that makes it the engine's
-     * turn it replies straight away.
+     * Flips the board between White's and Black's point of view. Purely visual:
+     * the sides keep playing their assigned colours, it only rotates the view.
      */
     private void flip() {
         flipped = !flipped;
-        if (vsEngine) {
-            engineSide = flipped ? Faction.WHITE : Faction.BLACK;
-        }
         layoutGrid();
         clearSelection();
         redraw();
@@ -360,18 +366,7 @@ public class GameScreen extends Screen {
     }
 
     private Text glyph(Piece piece) {
-        Text t = new Text(symbol(piece));
-        t.setFont(Font.font("Segoe UI Symbol", SQUARE * 0.72));
-        if (piece.getSide() == Faction.WHITE) {
-            t.setFill(Color.WHITE);
-            t.setStroke(Color.web("#333333"));
-            t.setStrokeWidth(1.2);
-        } else {
-            t.setFill(Color.web("#202020"));
-            t.setStroke(Color.web("#202020"));
-            t.setStrokeWidth(1.2);
-        }
-        return t;
+        return PieceGlyphs.glyph(piece, SQUARE * 0.72);
     }
 
     private void updateStatus() {
@@ -415,29 +410,4 @@ public class GameScreen extends Screen {
         return new Queen(side);
     }
 
-    // ----- glyphs -----
-
-    private String symbol(Piece piece) {
-        // Solid (filled) glyphs are used for both colours; the fill colour set in
-        // glyph() distinguishes white from black, which reads best on the board.
-        if (piece instanceof King) {
-            return "\u265A";
-        }
-        if (piece instanceof Queen) {
-            return "\u265B";
-        }
-        if (piece instanceof Rook) {
-            return "\u265C";
-        }
-        if (piece instanceof Bishop) {
-            return "\u265D";
-        }
-        if (piece instanceof Knight) {
-            return "\u265E";
-        }
-        if (piece instanceof Pawn) {
-            return "\u265F";
-        }
-        return "";
-    }
 }
