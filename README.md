@@ -1,6 +1,6 @@
 # Chess
 
-A fully playable two-player chess game built from scratch in **Java 17** with a **JavaFX** board interface. It implements the complete rules of chess — including castling, en passant, and pawn promotion — and detects check, checkmate, and stalemate.
+A fully playable chess game built from scratch in **Java 17** with a **JavaFX** board interface. It implements the complete rules of chess — including castling, en passant, and pawn promotion — and detects check, checkmate, and stalemate.
 
 The codebase follows a clean **Entity–Control–Boundary (ECB)** layered architecture, keeping all game rules in the control/entity layers while the JavaFX UI only draws state and forwards clicks.
 
@@ -60,7 +60,7 @@ src/main/java/
 │   ├── GameController.java       # Drives turns, executes moves, checks game status
 │   ├── LegalMove.java            # Validates moves (king-safety / check logic)
 │   ├── ChessEngine.java          # Engine opponent: minimax search with alpha-beta pruning
-│   ├── OpeningMove.java          # Opening book for the engine's first move as White
+│   ├── OpeningMove.java          # Opening book for the engine's
 │   └── evaluate/                 # Position scoring: MainEvaluation blends
 │                                 #   MiddleGameEvalation and EndGameEvaluation
 └── entity/
@@ -71,11 +71,11 @@ src/main/java/
     └── state/                    # GameState (turn, move history, status, board)
 ```
 
-| Layer | Responsibility |
-|-------|----------------|
-| **Boundary** | User interaction and rendering (JavaFX screens) |
-| **Control** | Game flow, move validation, board setup, chess engine |
-| **Entity** | Domain model: board, pieces, moves, game state |
+| Layer        | Responsibility                                        |
+| ------------ | ----------------------------------------------------- |
+| **Boundary** | User interaction and rendering (JavaFX screens)       |
+| **Control**  | Game flow, move validation, board setup, chess engine |
+| **Entity**   | Domain model: board, pieces, moves, game state        |
 
 Class diagrams for each layer are available in the [`Class diagram ver 1/`](Class%20diagram%20ver%201/) folder.
 
@@ -94,4 +94,4 @@ Class diagrams for each layer are available in the [`Class diagram ver 1/`](Clas
 
 ---
 
-*A personal project developed to practice object-oriented design and game logic implementation.*
+_A personal project developed to practice object-oriented design and game logic implementation._
